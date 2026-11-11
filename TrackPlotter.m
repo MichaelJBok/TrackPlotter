@@ -1326,11 +1326,9 @@ function TrackPlotter()
         % ── Per-individual positions & stats ────────────────────────────────
         posAll     = cell(nInd,1);
         ovLabel    = cell(nInd,1);
-        ovCoverage = nan(nInd,1);
         ovDist     = nan(nInd,1);
         ovMeanSpd  = nan(nInd,1);
         ovMedSpd   = nan(nInd,1);
-        ovSI       = nan(nInd,1);
         ovMu       = nan(nInd,1);
         ovR        = nan(nInd,1);
         for ovI = 1:nInd
@@ -1369,19 +1367,11 @@ function TrackPlotter()
             if any(vp), totalDist = sum(sqrt(dx(vp).^2 + dy(vp).^2)) * pxScale; end
             meanSpd = NaN;  medSpd = NaN;
             if any(dm), meanSpd = mean(sv(dm));  medSpd = median(sv(dm)); end
-            netDisp = NaN;  SI = NaN;
-            vld = find(~isnan(px));
-            if numel(vld) >= 2
-                netDisp = sqrt((px(vld(end))-px(vld(1)))^2 + (py(vld(end))-py(vld(1)))^2) * pxScale;
-                if totalDist > 1e-9, SI = netDisp / totalDist; end
-            end
 
             ovLabel{ovI}    = ovNames{ovI};
-            ovCoverage(ovI) = numel(vld) / max(nFrames,1) * 100;
             ovDist(ovI)     = totalDist;
             ovMeanSpd(ovI)  = meanSpd;
             ovMedSpd(ovI)   = medSpd;
-            ovSI(ovI)       = SI;
             ovMu(ovI)       = mu;
             ovR(ovI)        = Rv;
         end
@@ -1454,27 +1444,8 @@ function TrackPlotter()
         end
         tpSubtitle(axA, '○ = first valid frame   ✕ = last valid frame');
 
-        % ── Panel B: per-individual summary table ───────────────────────────
-        axB = axes('Parent',parent,'Position',[0.52 0.50 0.45 0.42]); axis(axB,'off');
-        title(axB,'Per-individual summary','FontSize',9);
-        hdrB = sprintf('%-10s %7s %7s %10s %10s %6s %7s %5s', 'Track', 'Valid%', ...
-            sprintf('Dist(%s)',posUnit), sprintf('Mean(%s)',spdUnit), ...
-            sprintf('Med(%s)',spdUnit), 'SI', 'Mu(deg)', 'R');
-        text(axB, 0, 0.97, hdrB, 'FontName','Courier New','FontSize',8, ...
-            'FontWeight','bold','VerticalAlignment','top','Units','normalized');
-        rowGap = 0.84 / max(nInd,1);
-        for ovI = 1:nInd
-            rowStr = sprintf('%-10s %6.0f%% %10.1f %10.2f %10.2f %6.2f %7.1f %5.2f', ...
-                strrep(ovLabel{ovI},'_',' '), ovCoverage(ovI), ovDist(ovI), ...
-                ovMeanSpd(ovI), ovMedSpd(ovI), ovSI(ovI), ovMu(ovI), ovR(ovI));
-            yPos = 0.88 - rowGap*(ovI-1);
-            text(axB, 0, yPos, rowStr, 'FontName','Courier New','FontSize',8, ...
-                'Color', cmapInd(ovI,:), 'VerticalAlignment','top','Units','normalized');
-        end
-        tpSubtitle(axB, sprintf('Mu/R: mean axial direction (pol = %.0f°) & vector strength (0-1)', polAng));
-
         % ── Panel C: total distance by individual ───────────────────────────
-        axC = axes('Parent',parent,'Position',[0.52 0.08 0.12 0.32]);
+        axC = axes('Parent',parent,'Position',[0.52 0.08 0.195 0.32]);
         hold(axC,'on'); axC.Color='w'; grid(axC,'on'); box(axC,'on');
         axC.XColor=[0.3 0.3 0.3]; axC.YColor=[0.3 0.3 0.3];
         axC.GridColor=[0.88 0.88 0.88]; axC.GridAlpha=1;
@@ -1489,7 +1460,7 @@ function TrackPlotter()
         axC.XTickLabelRotation = 45;
 
         % ── Panel D: mean speed by individual ────────────────────────────────
-        axD = axes('Parent',parent,'Position',[0.675 0.08 0.12 0.32]);
+        axD = axes('Parent',parent,'Position',[0.775 0.08 0.195 0.32]);
         hold(axD,'on'); axD.Color='w'; grid(axD,'on'); box(axD,'on');
         axD.XColor=[0.3 0.3 0.3]; axD.YColor=[0.3 0.3 0.3];
         axD.GridColor=[0.88 0.88 0.88]; axD.GridAlpha=1;
@@ -1504,8 +1475,10 @@ function TrackPlotter()
         axD.XTickLabelRotation = 45;
 
         % ── Panel E: mean direction × R, polar (axial, mirrored like the
-        % cross-file summary figure's polar scatter) ────────────────────────
-        axE = axes('Parent',parent,'Position',[0.815 0.08 0.155 0.32]);
+        % cross-file summary figure's polar scatter) — takes the big
+        % top-right slot the per-individual text table used to occupy;
+        % that table wasn't a useful way to read this data.
+        axE = axes('Parent',parent,'Position',[0.52 0.50 0.45 0.42]);
         hold(axE,'on'); axis(axE,'equal'); axis(axE,'off'); axE.Color='w';
         % mu is atan2d(dy,dx) on raw Track_X/Y, i.e. plain math convention —
         % but Panel A displays Y reversed (video convention: down = +Y), so
@@ -2071,12 +2044,14 @@ function TrackPlotter()
     end
 
     % ── Overview-selection helpers ──────────────────────────────────────────
-    % Multi-individual files get an extra "Overview" entry prepended to the
-    % Animal popup (position 1); single-individual files don't, so they keep
-    % behaving exactly as before. These three helpers are the only place that
-    % needs to know about the +1 index offset this introduces.
+    % Every file gets an extra "Overview" entry prepended to the Animal
+    % popup (position 1), single-individual files included — it defaults to
+    % overview on first open, same as multi-individual files, and only
+    % switches to the per-track view once a track is explicitly picked.
+    % These three helpers are the only place that needs to know about the
+    % +1 index offset this introduces.
     function tf = hasOverviewOption(names)
-        tf = numel(names) > 1;
+        tf = ~isempty(names);
     end
 
     function idx = animalIndexFromPopupValue(val, names)
