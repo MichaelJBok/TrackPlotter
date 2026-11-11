@@ -1,18 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { parseTracksCsv } from "./lib/parseCsv";
 import { backgroundImageTag, loadBackgroundImage } from "./lib/backgroundImage";
-import {
-  collectFiles,
-  directoryPickerSupported,
-  forgetDirectory,
-  getRememberedDirectory,
-  rememberDirectory,
-  verifyReadPermission,
-} from "./lib/directoryMemory";
+import { collectFiles, directoryPickerSupported } from "./lib/directoryPicker";
 import { exportAllVisiblePlots } from "./lib/plotDefaults";
 import { DEFAULT_SETTINGS, type BackgroundImage, type Settings } from "./lib/types";
 import OverviewView from "./components/OverviewView";
 import SingleTrackView from "./components/SingleTrackView";
+import ListBox from "./components/ListBox";
 
 /** The tag a tracks CSV's filename shares with its matching "<tag>_bg.*"
  * background image (see backgroundImage.ts). */
@@ -36,9 +30,6 @@ export default function App() {
   const [bgErrors, setBgErrors] = useState<string[]>([]);
   const bgInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
-  // Name of a folder remembered from a previous session (File System Access
-  // API only - see directoryMemory.ts); null until checked or if none saved.
-  const [rememberedDirName, setRememberedDirName] = useState<string | null>(null);
   const [selection, setSelection] = useState<string>(OVERVIEW);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   // Whichever view is mounted (Overview or SingleTrack) registers its own
@@ -49,11 +40,6 @@ export default function App() {
     csvExportRef.current = fn;
   };
   const [figuresExporting, setFiguresExporting] = useState(false);
-
-  useEffect(() => {
-    if (!directoryPickerSupported) return;
-    getRememberedDirectory().then((handle) => setRememberedDirName(handle?.name ?? null));
-  }, []);
 
   const data = useMemo(
     () => (activeFile ? parseTracksCsv(uploadedFiles[activeFile]) : null),
@@ -149,9 +135,9 @@ export default function App() {
     await loadFolderFiles(files);
   }
 
-  /** Chrome/Edge path: a real directory handle, rememberable across
-   * sessions. Falls back to the plain <input webkitdirectory> picker
-   * (handleFolderUpload) on browsers without the File System Access API. */
+  /** Chrome/Edge path: a real directory handle via the File System Access
+   * API. Falls back to the plain <input webkitdirectory> picker
+   * (handleFolderUpload) on browsers without it (Firefox/Safari). */
   async function handlePickFolder() {
     if (!directoryPickerSupported) {
       folderInputRef.current?.click();
@@ -159,37 +145,12 @@ export default function App() {
     }
     try {
       const handle: FileSystemDirectoryHandle = await (window as any).showDirectoryPicker({ mode: "read" });
-      await rememberDirectory(handle);
-      setRememberedDirName(handle.name);
       await loadFolderFiles(await collectFiles(handle));
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
         setFileErrors([`Couldn't read the folder: ${(err as Error).message}`]);
       }
     }
-  }
-
-  async function handleReloadRemembered() {
-    const handle = await getRememberedDirectory();
-    if (!handle) return;
-    if (!(await verifyReadPermission(handle))) {
-      setFileErrors([`Access to "${handle.name}" wasn't granted - use "Load folder…" to pick it again.`]);
-      return;
-    }
-    await loadFolderFiles(await collectFiles(handle));
-  }
-
-  async function handleForgetFolder() {
-    await forgetDirectory();
-    setRememberedDirName(null);
-  }
-
-  function handleClearUploads() {
-    setUploadedFiles({});
-    setFileErrors([]);
-    setActiveFile(null);
-    setSelection(OVERVIEW);
-    handleClearBackgrounds();
   }
 
   async function handleBackgroundUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -201,12 +162,6 @@ export default function App() {
     if (Object.keys(entries).length > 0) {
       setBackgroundImages((prev) => ({ ...prev, ...entries }));
     }
-  }
-
-  function handleClearBackgrounds() {
-    Object.values(backgroundImages).forEach((img) => URL.revokeObjectURL(img.url));
-    setBackgroundImages({});
-    setBgErrors([]);
   }
 
   async function handleExportFigures(format: "png" | "pdf") {
@@ -253,20 +208,6 @@ export default function App() {
           <button type="button" style={{ fontSize: 13 }} onClick={handlePickFolder}>
             Load folder…
           </button>
-          {directoryPickerSupported && rememberedDirName && (
-            <div style={{ display: "flex", gap: 4 }}>
-              <button
-                type="button"
-                style={{ fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}
-                onClick={handleReloadRemembered}
-              >
-                Reload "{rememberedDirName}"
-              </button>
-              <button type="button" title="Forget remembered folder" style={{ fontSize: 12 }} onClick={handleForgetFolder}>
-                ✕
-              </button>
-            </div>
-          )}
           <input
             type="file"
             accept=".csv"
@@ -289,44 +230,39 @@ export default function App() {
           <button type="button" style={{ fontSize: 12 }} onClick={() => bgInputRef.current?.click()}>
             Load background image(s)…
           </button>
-          {uploadedNames.length > 0 && (
-            <button type="button" style={{ fontSize: 12 }} onClick={handleClearUploads}>
-              Clear loaded files
-            </button>
-          )}
-          {Object.keys(backgroundImages).length > 0 && (
-            <button type="button" style={{ fontSize: 12 }} onClick={handleClearBackgrounds}>
-              Clear backgrounds
-            </button>
-          )}
         </section>
 
         <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <SectionLabel>Experiment</SectionLabel>
-          <select
-            value={activeFile ?? ""}
-            onChange={(e) => handleFileChange(e.target.value)}
-            disabled={uploadedNames.length === 0}
-            style={{ fontSize: 13 }}
-          >
-            {uploadedNames.length === 0 && <option value="">— no data loaded —</option>}
-            {uploadedNames.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
+          <ListBox
+            items={uploadedNames}
+            value={activeFile}
+            onSelect={handleFileChange}
+            placeholder="Search experiments…"
+            emptyMessage="No data loaded"
+          />
           {data && (
             <>
               <SectionLabel>Animal</SectionLabel>
-              <select value={selection} onChange={(e) => setSelection(e.target.value)} style={{ fontSize: 13 }}>
-                {hasOverview && <option value={OVERVIEW}>— Overview (ALL individuals) —</option>}
-                {data.trackLabels.map((label) => (
-                  <option key={label} value={label}>
-                    {label}
-                  </option>
-                ))}
-              </select>
+              {hasOverview && (
+                <button
+                  type="button"
+                  onClick={() => setSelection(OVERVIEW)}
+                  style={{
+                    fontSize: 12,
+                    textAlign: "left",
+                    background: selection === OVERVIEW ? "#dce7f7" : undefined,
+                  }}
+                >
+                  — Overview (ALL individuals) —
+                </button>
+              )}
+              <ListBox
+                items={data.trackLabels}
+                value={selection}
+                onSelect={setSelection}
+                placeholder="Search tracks…"
+              />
             </>
           )}
         </section>
