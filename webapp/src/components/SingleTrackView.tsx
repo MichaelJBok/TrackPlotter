@@ -31,6 +31,7 @@ export default function SingleTrackView({ data, label, settings }: Props) {
   const { meanDeg, R } = axialMeanR(dirAbove, settings.polAngle);
 
   const colorVals = settings.colorMode === "speed" ? speedRaw : frame;
+  const frameRange: [number, number] = frame.length ? [frame[0], frame[frame.length - 1]] : [0, 1];
 
   return (
     <div
@@ -54,8 +55,8 @@ export default function SingleTrackView({ data, label, settings }: Props) {
           gap: 8,
         }}
       >
-        <DirectionPanel frame={frame} dirDeg={dirDeg} fps={settings.fps} colorVals={colorVals} />
-        <SpeedPanel frame={frame} speedSmooth={speedSmooth} />
+        <DirectionPanel frame={frame} dirDeg={dirDeg} fps={settings.fps} colorVals={colorVals} xRange={frameRange} />
+        <SpeedPanel frame={frame} speedRaw={speedRaw} speedSmooth={speedSmooth} xRange={frameRange} />
       </div>
       <div style={{ gridColumn: "1", gridRow: "2" }}>
         <DirectionRosePanel dirDeg={dirDeg} polAngle={settings.polAngle} />
@@ -123,8 +124,8 @@ function TrackPanel({
 }
 
 function DirectionPanel({
-  frame, dirDeg, fps, colorVals,
-}: { frame: number[]; dirDeg: number[]; fps: number; colorVals: number[] }) {
+  frame, dirDeg, fps, colorVals, xRange,
+}: { frame: number[]; dirDeg: number[]; fps: number; colorVals: number[]; xRange: [number, number] }) {
   const dirSmooth = circularMovingAverage(dirDeg, 5);
   const durationSec = frame.length ? frame[frame.length - 1] / fps : 0;
   const lineChunks = coloredLineChunks(frame, dirSmooth, colorVals, 8, 180);
@@ -156,6 +157,7 @@ function DirectionPanel({
           title: { text: "Frame" },
           gridcolor: gridColor,
           domain: [0, 1],
+          range: xRange,
         },
         xaxis2: {
           overlaying: "x",
@@ -179,18 +181,28 @@ function DirectionPanel({
 }
 
 function SpeedPanel({
-  frame, speedSmooth,
-}: { frame: number[]; speedSmooth: number[] }) {
+  frame, speedRaw, speedSmooth, xRange,
+}: { frame: number[]; speedRaw: number[]; speedSmooth: number[]; xRange: [number, number] }) {
   return (
     <Plot
       data={[
         {
           x: frame,
+          y: speedRaw,
+          type: "scattergl",
+          mode: "markers",
+          marker: { size: 4, color: "#bbb", opacity: 0.5 },
+          name: "Speed",
+          hoverinfo: "skip",
+        },
+        {
+          x: frame,
           y: speedSmooth,
           type: "scatter",
           mode: "lines",
-          line: { color: "#555", width: 1.5 },
-          name: "Speed",
+          line: { color: "#333", width: 1.8 },
+          name: "Speed (smoothed)",
+          hoverinfo: "skip",
         },
       ]}
       layout={baseLayout("Speed", {
@@ -198,6 +210,7 @@ function SpeedPanel({
           title: { text: "Frame" },
           gridcolor: gridColor,
           domain: [0, 1],
+          range: xRange,
         },
         yaxis: { title: { text: "Speed (px/s)" }, gridcolor: gridColor },
         margin: { l: 50, r: 20, t: 24, b: 36 },
