@@ -1066,6 +1066,30 @@ function TrackPlotter()
                 end
                 scatter(ax2r, fr_d, dv_d, 5, cmap(cidxD,:), 'filled', 'MarkerFaceAlpha',0.65);
             end
+            % Smoothed trend lines, drawn on top of the raw/smoothed scatter.
+            % Speed already has a 5-frame moving average (sv_smooth); just
+            % draw it as a line too. Direction needs a CIRCULAR moving
+            % average (plain movmean on degrees breaks at the ±180° wrap,
+            % e.g. averaging +179° and -179° would wrongly give ~0°) — done
+            % via the unit-vector components, then re-broken into separate
+            % segments at any remaining wrap so the line doesn't draw a
+            % spurious vertical jump across it.
+            plot(ax2, fr(:), sv_smooth(:), '-', 'Color',[0.30 0.30 0.30], 'LineWidth',1.1);
+            if numel(dv) >= 5
+                dv_sm = atan2d(movmean(sind(dv(:)),5), movmean(cosd(dv(:)),5));
+            else
+                dv_sm = dv(:);
+            end
+            if ~isempty(dv_sm)
+                frW = fr(:);  dvW = dv_sm;
+                wrapAt = find(abs(diff(dvW)) > 180);
+                for k = numel(wrapAt):-1:1
+                    wi = wrapAt(k);
+                    dvW = [dvW(1:wi); NaN; dvW(wi+1:end)]; %#ok<AGROW>
+                    frW = [frW(1:wi); frW(wi); frW(wi+1:end)]; %#ok<AGROW>
+                end
+                plot(ax2r, frW, dvW, '-', 'Color', col, 'LineWidth', 1.1);
+            end
             ax2.XLim=[1 nFrames];
             ymax2 = max(prctile(sv_smooth,95)*1.15, 1);
             if spdAxisMax > 0, ymax2 = spdAxisMax; end
@@ -1284,7 +1308,7 @@ function TrackPlotter()
         else
             posUnit = 'cm';  spdUnit = 'cm/s';
         end
-        cmapInd = lines(max(nInd,1));
+        cmapInd = overviewColors(max(nInd,1));
 
         % Background frame: AnimalTracker writes a clean reference frame to
         % {folder}/../sessions/{stem}_bg.png (sibling of the export folder
@@ -1483,6 +1507,13 @@ function TrackPlotter()
         % cross-file summary figure's polar scatter) ────────────────────────
         axE = axes('Parent',parent,'Position',[0.815 0.08 0.155 0.32]);
         hold(axE,'on'); axis(axE,'equal'); axis(axE,'off'); axE.Color='w';
+        % mu is atan2d(dy,dx) on raw Track_X/Y, i.e. plain math convention —
+        % but Panel A displays Y reversed (video convention: down = +Y), so
+        % without this, a direction that visually points down in Panel A
+        % would plot pointing up here. Reversing Y here too keeps the two
+        % panels' sense of "up" consistent (0°/180° stay put on the left-
+        % right axis; it's the top/bottom labels that swap).
+        axE.YDir = 'reverse';
         title(axE, sprintf('Direction (pol = %.0f°)', polAng), 'FontSize',8);
         th_ring = linspace(0, 2*pi, 120);
         for gr = [0.5 1.0]
@@ -1499,8 +1530,11 @@ function TrackPlotter()
             if isnan(ovMu(ovI)) || isnan(ovR(ovI)), continue; end
             muRad = deg2rad(ovMu(ovI));
             % Axial: a direction and its 180°-flip are statistically the same
-            % axis, so both are plotted (matching makeFigure's polar scatter).
+            % axis, so both are plotted (matching makeFigure's polar scatter),
+            % joined by a line through the origin so each individual's axis
+            % reads as a single line rather than two unrelated dots.
             xA = ovR(ovI) * cos(muRad);  yA = ovR(ovI) * sin(muRad);
+            plot(axE, [xA -xA], [yA -yA], '-', 'Color', cmapInd(ovI,:), 'LineWidth', 1.2);
             scatter(axE, [xA -xA], [yA -yA], 26, cmapInd(ovI,:), 'filled', 'MarkerFaceAlpha',0.85);
         end
         axE.XLim = [-1.3 1.3]; axE.YLim = [-1.3 1.3];
@@ -2069,6 +2103,26 @@ function TrackPlotter()
         mag  = 10^floor(log10(max(raw, 1e-9)));
         step = mag * ceil(raw / mag);
         if step == 0, step = 1; end
+    end
+
+    function cmap = overviewColors(n)
+    % A per-individual qualitative palette for the Overview. lines(n) only
+    % has 7 unique colors and silently repeats them beyond that (file with
+    % 8+ tracked individuals would show track 8 in the same color as
+    % track 1) — 'gem12' gives 12 distinct colors instead, covering every
+    % file in practice (this dataset tops out at 10 individuals), and its
+    % first 7 match lines() exactly so files with ≤7 individuals look the
+    % same as before.
+        try
+            base = orderedcolors('gem12');
+        catch
+            base = lines(7);   % older MATLAB without orderedcolors()
+        end
+        if n <= size(base,1)
+            cmap = base(1:n,:);
+        else
+            cmap = [base; turbo(n - size(base,1))];
+        end
     end
 
     function st = defSt()
