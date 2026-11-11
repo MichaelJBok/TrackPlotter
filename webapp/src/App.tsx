@@ -38,6 +38,7 @@ export default function App() {
   const [backgroundImages, setBackgroundImages] = useState<Record<string, BackgroundImage>>({});
   const [bgErrors, setBgErrors] = useState<string[]>([]);
   const bgInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
   const [selection, setSelection] = useState<string>(OVERVIEW);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
 
@@ -54,13 +55,9 @@ export default function App() {
     setSelection(OVERVIEW); // always land on Overview for a newly selected file
   }
 
-  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
-    e.target.value = ""; // allow re-selecting the same filename(s) later
-    if (files.length === 0) return;
-
+  async function ingestCsvFiles(files: File[]) {
     const errors: string[] = [];
-    const newEntries: Record<string, string> = {};
+    const entries: Record<string, string> = {};
     let firstGood: string | null = null;
     for (const file of files) {
       try {
@@ -70,17 +67,69 @@ export default function App() {
           errors.push(`"${file.name}" doesn't look like a tracks CSV (no Label_X/Label_Y columns found).`);
           continue;
         }
-        newEntries[file.name] = text;
+        entries[file.name] = text;
         if (firstGood === null) firstGood = file.name;
       } catch (err) {
         errors.push(`Couldn't read "${file.name}": ${(err as Error).message}`);
       }
     }
+    return { errors, entries, firstGood };
+  }
+
+  async function ingestBackgroundFiles(files: File[]) {
+    const errors: string[] = [];
+    const entries: Record<string, BackgroundImage> = {};
+    for (const file of files) {
+      const tag = backgroundImageTag(file.name);
+      if (!tag) {
+        errors.push(`"${file.name}" doesn't look like a "<experiment>_bg.jpg/png" background image.`);
+        continue;
+      }
+      try {
+        entries[tag] = await loadBackgroundImage(file);
+      } catch (err) {
+        errors.push(`Couldn't read "${file.name}": ${(err as Error).message}`);
+      }
+    }
+    return { errors, entries };
+  }
+
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = ""; // allow re-selecting the same filename(s) later
+    if (files.length === 0) return;
+    const { errors, entries, firstGood } = await ingestCsvFiles(files);
     setFileErrors(errors);
     if (firstGood) {
-      setUploadedFiles((prev) => ({ ...prev, ...newEntries }));
+      setUploadedFiles((prev) => ({ ...prev, ...entries }));
       setActiveFile(firstGood);
       setSelection(OVERVIEW);
+    }
+  }
+
+  async function handleFolderUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (files.length === 0) return;
+
+    // A folder drop just sorts every file by extension and feeds each half
+    // through the same path as the individual pickers - anything else
+    // (.DS_Store, notes, ...) is silently ignored, not reported as an error.
+    const csvFiles = files.filter((f) => /\.csv$/i.test(f.name));
+    const imageFiles = files.filter((f) => /\.(jpe?g|png)$/i.test(f.name));
+    const [csvResult, imgResult] = await Promise.all([
+      ingestCsvFiles(csvFiles),
+      ingestBackgroundFiles(imageFiles),
+    ]);
+    setFileErrors(csvResult.errors);
+    setBgErrors(imgResult.errors);
+    if (csvResult.firstGood) {
+      setUploadedFiles((prev) => ({ ...prev, ...csvResult.entries }));
+      setActiveFile(csvResult.firstGood);
+      setSelection(OVERVIEW);
+    }
+    if (Object.keys(imgResult.entries).length > 0) {
+      setBackgroundImages((prev) => ({ ...prev, ...imgResult.entries }));
     }
   }
 
@@ -96,24 +145,10 @@ export default function App() {
     const files = Array.from(e.target.files ?? []);
     e.target.value = "";
     if (files.length === 0) return;
-
-    const errors: string[] = [];
-    const newEntries: Record<string, BackgroundImage> = {};
-    for (const file of files) {
-      const tag = backgroundImageTag(file.name);
-      if (!tag) {
-        errors.push(`"${file.name}" doesn't look like a "<experiment>_bg.jpg/png" background image.`);
-        continue;
-      }
-      try {
-        newEntries[tag] = await loadBackgroundImage(file);
-      } catch (err) {
-        errors.push(`Couldn't read "${file.name}": ${(err as Error).message}`);
-      }
-    }
+    const { errors, entries } = await ingestBackgroundFiles(files);
     setBgErrors(errors);
-    if (Object.keys(newEntries).length > 0) {
-      setBackgroundImages((prev) => ({ ...prev, ...newEntries }));
+    if (Object.keys(entries).length > 0) {
+      setBackgroundImages((prev) => ({ ...prev, ...entries }));
     }
   }
 
@@ -158,6 +193,22 @@ export default function App() {
         />
         <button type="button" style={{ fontSize: 12 }} onClick={() => fileInputRef.current?.click()}>
           Load CSV(s) from disk…
+        </button>
+        <input
+          type="file"
+          multiple
+          ref={(el) => {
+            if (el) {
+              el.setAttribute("webkitdirectory", "");
+              el.setAttribute("directory", "");
+            }
+            folderInputRef.current = el;
+          }}
+          onChange={handleFolderUpload}
+          style={{ display: "none" }}
+        />
+        <button type="button" style={{ fontSize: 12 }} onClick={() => folderInputRef.current?.click()}>
+          Load folder…
         </button>
         {uploadedNames.length > 0 && (
           <button type="button" style={{ fontSize: 12 }} onClick={handleClearUploads}>
