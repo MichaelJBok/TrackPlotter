@@ -1,6 +1,14 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { parseTracksCsv } from "./lib/parseCsv";
 import { backgroundImageTag, loadBackgroundImage } from "./lib/backgroundImage";
+import {
+  collectFiles,
+  directoryPickerSupported,
+  forgetDirectory,
+  getRememberedDirectory,
+  rememberDirectory,
+  verifyReadPermission,
+} from "./lib/directoryMemory";
 import { DEFAULT_SETTINGS, type BackgroundImage, type Settings } from "./lib/types";
 import OverviewView from "./components/OverviewView";
 import SingleTrackView from "./components/SingleTrackView";
@@ -11,25 +19,13 @@ function experimentTag(csvFilename: string): string {
   return csvFilename.replace(/_tracks\.csv$/i, "").replace(/\.csv$/i, "");
 }
 
-import i1Csv from "./fixtures/260814_GX010049_i1_tracks.csv?raw";
-import dsCsv from "./fixtures/260826_GX010066_ds_tracks.csv?raw";
-import pvCsv from "./fixtures/260902_GX010069_pv_tracks.csv?raw";
-import phCsv from "./fixtures/260902_GX010069_ph_tracks.csv?raw";
-
-const FIXTURES: Record<string, string> = {
-  "260902_GX010069_pv_tracks.csv": pvCsv,
-  "260902_GX010069_ph_tracks.csv": phCsv,
-  "260814_GX010049_i1_tracks.csv": i1Csv,
-  "260826_GX010066_ds_tracks.csv": dsCsv,
-};
-
 const OVERVIEW = "__overview__";
 
 export default function App() {
   // Each uploaded file stays its own separate dataset (own tracks, own ROI) -
   // loading several just adds more options to pick from, it never merges them.
   const [uploadedFiles, setUploadedFiles] = useState<Record<string, string>>({});
-  const [activeFile, setActiveFile] = useState<string>(Object.keys(FIXTURES)[0]);
+  const [activeFile, setActiveFile] = useState<string | null>(null);
   const [fileErrors, setFileErrors] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Background images are matched to an experiment by tag (see experimentTag)
@@ -39,16 +35,24 @@ export default function App() {
   const [bgErrors, setBgErrors] = useState<string[]>([]);
   const bgInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
+  // Name of a folder remembered from a previous session (File System Access
+  // API only - see directoryMemory.ts); null until checked or if none saved.
+  const [rememberedDirName, setRememberedDirName] = useState<string | null>(null);
   const [selection, setSelection] = useState<string>(OVERVIEW);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
 
+  useEffect(() => {
+    if (!directoryPickerSupported) return;
+    getRememberedDirectory().then((handle) => setRememberedDirName(handle?.name ?? null));
+  }, []);
+
   const data = useMemo(
-    () => parseTracksCsv(uploadedFiles[activeFile] ?? FIXTURES[activeFile]),
+    () => (activeFile ? parseTracksCsv(uploadedFiles[activeFile]) : null),
     [activeFile, uploadedFiles],
   );
-  const hasOverview = data.trackLabels.length > 0; // always show it, single- or multi-individual
+  const hasOverview = (data?.trackLabels.length ?? 0) > 0; // always show it, single- or multi-individual
   const uploadedNames = Object.keys(uploadedFiles);
-  const bgImage = backgroundImages[experimentTag(activeFile)];
+  const bgImage = activeFile ? backgroundImages[experimentTag(activeFile)] : undefined;
 
   function handleFileChange(name: string) {
     setActiveFile(name);
@@ -107,14 +111,10 @@ export default function App() {
     }
   }
 
-  async function handleFolderUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
-    e.target.value = "";
-    if (files.length === 0) return;
-
-    // A folder drop just sorts every file by extension and feeds each half
-    // through the same path as the individual pickers - anything else
-    // (.DS_Store, notes, ...) is silently ignored, not reported as an error.
+  // A folder drop just sorts every file by extension and feeds each half
+  // through the same path as the individual pickers - anything else
+  // (.DS_Store, notes, ...) is silently ignored, not reported as an error.
+  async function loadFolderFiles(files: File[]) {
     const csvFiles = files.filter((f) => /\.csv$/i.test(f.name));
     const imageFiles = files.filter((f) => /\.(jpe?g|png)$/i.test(f.name));
     const [csvResult, imgResult] = await Promise.all([
@@ -133,10 +133,52 @@ export default function App() {
     }
   }
 
+  async function handleFolderUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (files.length === 0) return;
+    await loadFolderFiles(files);
+  }
+
+  /** Chrome/Edge path: a real directory handle, rememberable across
+   * sessions. Falls back to the plain <input webkitdirectory> picker
+   * (handleFolderUpload) on browsers without the File System Access API. */
+  async function handlePickFolder() {
+    if (!directoryPickerSupported) {
+      folderInputRef.current?.click();
+      return;
+    }
+    try {
+      const handle: FileSystemDirectoryHandle = await (window as any).showDirectoryPicker({ mode: "read" });
+      await rememberDirectory(handle);
+      setRememberedDirName(handle.name);
+      await loadFolderFiles(await collectFiles(handle));
+    } catch (err) {
+      if ((err as Error).name !== "AbortError") {
+        setFileErrors([`Couldn't read the folder: ${(err as Error).message}`]);
+      }
+    }
+  }
+
+  async function handleReloadRemembered() {
+    const handle = await getRememberedDirectory();
+    if (!handle) return;
+    if (!(await verifyReadPermission(handle))) {
+      setFileErrors([`Access to "${handle.name}" wasn't granted - use "Load folder…" to pick it again.`]);
+      return;
+    }
+    await loadFolderFiles(await collectFiles(handle));
+  }
+
+  async function handleForgetFolder() {
+    await forgetDirectory();
+    setRememberedDirName(null);
+  }
+
   function handleClearUploads() {
     setUploadedFiles({});
     setFileErrors([]);
-    setActiveFile(Object.keys(FIXTURES)[0]);
+    setActiveFile(null);
     setSelection(OVERVIEW);
     handleClearBackgrounds();
   }
@@ -164,23 +206,17 @@ export default function App() {
         <h1 style={{ fontSize: 18, margin: 0, color: "#1f3a63" }}>TrackPlotter (web prototype)</h1>
         <label>
           Experiment:{" "}
-          <select value={activeFile} onChange={(e) => handleFileChange(e.target.value)}>
-            {uploadedNames.length > 0 && (
-              <optgroup label="Loaded files">
-                {uploadedNames.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </optgroup>
-            )}
-            <optgroup label="Sample data">
-              {Object.keys(FIXTURES).map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </optgroup>
+          <select
+            value={activeFile ?? ""}
+            onChange={(e) => handleFileChange(e.target.value)}
+            disabled={uploadedNames.length === 0}
+          >
+            {uploadedNames.length === 0 && <option value="">— no data loaded —</option>}
+            {uploadedNames.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
           </select>
         </label>
         <input
@@ -207,9 +243,24 @@ export default function App() {
           onChange={handleFolderUpload}
           style={{ display: "none" }}
         />
-        <button type="button" style={{ fontSize: 12 }} onClick={() => folderInputRef.current?.click()}>
+        <button type="button" style={{ fontSize: 12 }} onClick={handlePickFolder}>
           Load folder…
         </button>
+        {directoryPickerSupported && rememberedDirName && (
+          <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <button type="button" style={{ fontSize: 12 }} onClick={handleReloadRemembered}>
+              Reload "{rememberedDirName}"
+            </button>
+            <button
+              type="button"
+              title="Forget remembered folder"
+              style={{ fontSize: 12 }}
+              onClick={handleForgetFolder}
+            >
+              ✕
+            </button>
+          </span>
+        )}
         {uploadedNames.length > 0 && (
           <button type="button" style={{ fontSize: 12 }} onClick={handleClearUploads}>
             Clear loaded files
@@ -231,17 +282,19 @@ export default function App() {
             Clear backgrounds
           </button>
         )}
-        <label>
-          Animal:{" "}
-          <select value={selection} onChange={(e) => setSelection(e.target.value)}>
-            {hasOverview && <option value={OVERVIEW}>— Overview (ALL individuals) —</option>}
-            {data.trackLabels.map((label) => (
-              <option key={label} value={label}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
+        {data && (
+          <label>
+            Animal:{" "}
+            <select value={selection} onChange={(e) => setSelection(e.target.value)}>
+              {hasOverview && <option value={OVERVIEW}>— Overview (ALL individuals) —</option>}
+              {data.trackLabels.map((label) => (
+                <option key={label} value={label}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <SettingsBar settings={settings} onChange={setSettings} />
       </header>
       {(fileErrors.length > 0 || bgErrors.length > 0) && (
@@ -252,7 +305,12 @@ export default function App() {
         </div>
       )}
 
-      {selection === OVERVIEW ? (
+      {!data ? (
+        <p style={{ color: "#666", fontSize: 14 }}>
+          Load a tracks CSV (or a whole folder of them) above to get started. Nothing you load is ever sent
+          anywhere - it's read directly off your disk and stays in this browser tab.
+        </p>
+      ) : selection === OVERVIEW ? (
         <OverviewView data={data} settings={settings} onJumpToTrack={setSelection} bgImage={bgImage} />
       ) : (
         <SingleTrackView data={data} label={selection} settings={settings} />
