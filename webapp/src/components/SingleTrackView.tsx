@@ -11,7 +11,7 @@ import {
   rankTransform,
 } from "../lib/analysis";
 import { coloredLineChunks, PARULA_COLORSCALE } from "../lib/colorLine";
-import { basePlotConfig, baseLayout, gridColor } from "../lib/plotDefaults";
+import { basePlotConfig, baseLayout, gridColor, roiShapes } from "../lib/plotDefaults";
 import { downloadCsv } from "../lib/exportCsv";
 
 interface Props {
@@ -140,7 +140,7 @@ export default function SingleTrackView({ data, label, settings, registerCsvExpo
         }}
       >
         <div style={{ gridColumn: "1", gridRow: "1" }}>
-          <TrackPanel x={x} y={y} roi={data.roi} colorVals={trackColorVals}
+          <TrackPanel x={x} y={y} roi={data.roi} roiFilterPct={settings.roiFilterPct} colorVals={trackColorVals}
             pathStats={path} selectedFrame={selectedFrame} onSelectFrame={setSelectedFrame} />
         </div>
         <div
@@ -175,27 +175,14 @@ export default function SingleTrackView({ data, label, settings, registerCsvExpo
 }
 
 function TrackPanel({
-  x, y, roi, colorVals, pathStats, selectedFrame, onSelectFrame,
+  x, y, roi, roiFilterPct, colorVals, pathStats, selectedFrame, onSelectFrame,
 }: {
-  x: number[]; y: number[]; roi: TracksData["roi"];
+  x: number[]; y: number[]; roi: TracksData["roi"]; roiFilterPct: number;
   colorVals: number[];
   pathStats: { straightness: number; meanAbsTurnDeg: number; netDisp: number };
   selectedFrame: number | null; onSelectFrame: (frame: number) => void;
 }) {
-  const shapes = roi
-    ? [
-        {
-          type: "circle" as const,
-          xref: "x" as const,
-          yref: "y" as const,
-          x0: roi.cx - roi.diam / 2,
-          x1: roi.cx + roi.diam / 2,
-          y0: roi.cy - roi.diam / 2,
-          y1: roi.cy + roi.diam / 2,
-          line: { color: "#ccc", width: 1.5 },
-        },
-      ]
-    : [];
+  const shapes = roiShapes(roi, roiFilterPct);
   const subtitle = Number.isFinite(pathStats.straightness)
     ? `SI=${pathStats.straightness.toFixed(2)} | turn=${pathStats.meanAbsTurnDeg.toFixed(1)}° | disp=${pathStats.netDisp.toFixed(0)}px`
     : "";

@@ -3,7 +3,7 @@ import Plot from "react-plotly.js";
 import type { BackgroundImage, TracksData, Settings, TrackStats } from "../lib/types";
 import { applyFilters, computeTrackStats } from "../lib/analysis";
 import { colorForIndex } from "../lib/palette";
-import { basePlotConfig, baseLayout, gridColor } from "../lib/plotDefaults";
+import { basePlotConfig, baseLayout, gridColor, roiShapes } from "../lib/plotDefaults";
 import { downloadCsv } from "../lib/exportCsv";
 
 interface Props {
@@ -91,20 +91,7 @@ function XYOverlayPanel({
     };
   });
 
-  const shapes = data.roi
-    ? [
-        {
-          type: "circle" as const,
-          xref: "x" as const,
-          yref: "y" as const,
-          x0: data.roi.cx - data.roi.diam / 2,
-          x1: data.roi.cx + data.roi.diam / 2,
-          y0: data.roi.cy - data.roi.diam / 2,
-          y1: data.roi.cy + data.roi.diam / 2,
-          line: { color: "#ccc", width: 1.5 },
-        },
-      ]
-    : [];
+  const shapes = roiShapes(data.roi, settings.roiFilterPct);
 
   const images = bgImage
     ? [

@@ -65,3 +65,41 @@ export function baseLayout(title: string, overrides: Partial<Layout> = {}): Part
 }
 
 export const gridColor = "#e0e0e0";
+
+/** The ROI circle (grey, solid) plus, when Max ROI% is on, a second dashed
+ * circle marking the smaller inclusion zone it actually filters to -
+ * applyFilters() in analysis.ts drops any point farther than this radius
+ * from the ROI center. Shared by the Overview XY plot and the single-track
+ * Track panel so both stay in sync when the setting changes. */
+export function roiShapes(
+  roi: { cx: number; cy: number; diam: number } | null,
+  roiFilterPct: number,
+): NonNullable<Layout["shapes"]> {
+  if (!roi) return [];
+  const shapes: NonNullable<Layout["shapes"]> = [
+    {
+      type: "circle",
+      xref: "x",
+      yref: "y",
+      x0: roi.cx - roi.diam / 2,
+      x1: roi.cx + roi.diam / 2,
+      y0: roi.cy - roi.diam / 2,
+      y1: roi.cy + roi.diam / 2,
+      line: { color: "#ccc", width: 1.5 },
+    },
+  ];
+  if (roiFilterPct > 0) {
+    const r = (roi.diam / 2) * (roiFilterPct / 100);
+    shapes.push({
+      type: "circle",
+      xref: "x",
+      yref: "y",
+      x0: roi.cx - r,
+      x1: roi.cx + r,
+      y0: roi.cy - r,
+      y1: roi.cy + r,
+      line: { color: "#e07b00", width: 1.5, dash: "dash" },
+    });
+  }
+  return shapes;
+}
