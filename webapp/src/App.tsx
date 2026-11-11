@@ -201,15 +201,95 @@ export default function App() {
   }
 
   return (
-    <div style={{ padding: 16, maxWidth: 1400, margin: "0 auto" }}>
-      <header style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
-        <h1 style={{ fontSize: 18, margin: 0, color: "#1f3a63" }}>TrackPlotter (web prototype)</h1>
-        <label>
-          Experiment:{" "}
+    <div style={{ display: "flex", height: "100vh" }}>
+      <aside
+        style={{
+          width: 280,
+          flexShrink: 0,
+          boxSizing: "border-box",
+          padding: 16,
+          overflowY: "auto",
+          borderRight: "1px solid #ddd",
+          display: "flex",
+          flexDirection: "column",
+          gap: 20,
+        }}
+      >
+        <h1 style={{ fontSize: 16, margin: 0, color: "#1f3a63" }}>TrackPlotter</h1>
+
+        <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <SectionLabel>Data</SectionLabel>
+          <input
+            type="file"
+            multiple
+            ref={(el) => {
+              if (el) {
+                el.setAttribute("webkitdirectory", "");
+                el.setAttribute("directory", "");
+              }
+              folderInputRef.current = el;
+            }}
+            onChange={handleFolderUpload}
+            style={{ display: "none" }}
+          />
+          <button type="button" style={{ fontSize: 13 }} onClick={handlePickFolder}>
+            Load folder…
+          </button>
+          {directoryPickerSupported && rememberedDirName && (
+            <div style={{ display: "flex", gap: 4 }}>
+              <button
+                type="button"
+                style={{ fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}
+                onClick={handleReloadRemembered}
+              >
+                Reload "{rememberedDirName}"
+              </button>
+              <button type="button" title="Forget remembered folder" style={{ fontSize: 12 }} onClick={handleForgetFolder}>
+                ✕
+              </button>
+            </div>
+          )}
+          <input
+            type="file"
+            accept=".csv"
+            multiple
+            ref={fileInputRef}
+            onChange={handleFileUpload}
+            style={{ display: "none" }}
+          />
+          <button type="button" style={{ fontSize: 12 }} onClick={() => fileInputRef.current?.click()}>
+            Load CSV(s) from disk…
+          </button>
+          <input
+            type="file"
+            accept="image/jpeg,image/png"
+            multiple
+            ref={bgInputRef}
+            onChange={handleBackgroundUpload}
+            style={{ display: "none" }}
+          />
+          <button type="button" style={{ fontSize: 12 }} onClick={() => bgInputRef.current?.click()}>
+            Load background image(s)…
+          </button>
+          {uploadedNames.length > 0 && (
+            <button type="button" style={{ fontSize: 12 }} onClick={handleClearUploads}>
+              Clear loaded files
+            </button>
+          )}
+          {Object.keys(backgroundImages).length > 0 && (
+            <button type="button" style={{ fontSize: 12 }} onClick={handleClearBackgrounds}>
+              Clear backgrounds
+            </button>
+          )}
+        </section>
+
+        <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <SectionLabel>Experiment</SectionLabel>
           <select
             value={activeFile ?? ""}
             onChange={(e) => handleFileChange(e.target.value)}
             disabled={uploadedNames.length === 0}
+            style={{ fontSize: 13 }}
           >
             {uploadedNames.length === 0 && <option value="">— no data loaded —</option>}
             {uploadedNames.map((name) => (
@@ -218,209 +298,169 @@ export default function App() {
               </option>
             ))}
           </select>
-        </label>
-        <input
-          type="file"
-          accept=".csv"
-          multiple
-          ref={fileInputRef}
-          onChange={handleFileUpload}
-          style={{ display: "none" }}
-        />
-        <button type="button" style={{ fontSize: 12 }} onClick={() => fileInputRef.current?.click()}>
-          Load CSV(s) from disk…
-        </button>
-        <input
-          type="file"
-          multiple
-          ref={(el) => {
-            if (el) {
-              el.setAttribute("webkitdirectory", "");
-              el.setAttribute("directory", "");
-            }
-            folderInputRef.current = el;
-          }}
-          onChange={handleFolderUpload}
-          style={{ display: "none" }}
-        />
-        <button type="button" style={{ fontSize: 12 }} onClick={handlePickFolder}>
-          Load folder…
-        </button>
-        {directoryPickerSupported && rememberedDirName && (
-          <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-            <button type="button" style={{ fontSize: 12 }} onClick={handleReloadRemembered}>
-              Reload "{rememberedDirName}"
-            </button>
-            <button
-              type="button"
-              title="Forget remembered folder"
-              style={{ fontSize: 12 }}
-              onClick={handleForgetFolder}
-            >
-              ✕
-            </button>
-          </span>
-        )}
-        {uploadedNames.length > 0 && (
-          <button type="button" style={{ fontSize: 12 }} onClick={handleClearUploads}>
-            Clear loaded files
-          </button>
-        )}
-        <input
-          type="file"
-          accept="image/jpeg,image/png"
-          multiple
-          ref={bgInputRef}
-          onChange={handleBackgroundUpload}
-          style={{ display: "none" }}
-        />
-        <button type="button" style={{ fontSize: 12 }} onClick={() => bgInputRef.current?.click()}>
-          Load background image(s)…
-        </button>
-        {Object.keys(backgroundImages).length > 0 && (
-          <button type="button" style={{ fontSize: 12 }} onClick={handleClearBackgrounds}>
-            Clear backgrounds
-          </button>
-        )}
-        {data && (
-          <label>
-            Animal:{" "}
-            <select value={selection} onChange={(e) => setSelection(e.target.value)}>
-              {hasOverview && <option value={OVERVIEW}>— Overview (ALL individuals) —</option>}
-              {data.trackLabels.map((label) => (
-                <option key={label} value={label}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        <SettingsBar settings={settings} onChange={setSettings} />
-      </header>
-      {(fileErrors.length > 0 || bgErrors.length > 0) && (
-        <div style={{ color: "#c0392b", fontSize: 12, marginTop: -8, marginBottom: 12 }}>
-          {[...fileErrors, ...bgErrors].map((msg, i) => (
-            <div key={i}>{msg}</div>
-          ))}
-        </div>
-      )}
+          {data && (
+            <>
+              <SectionLabel>Animal</SectionLabel>
+              <select value={selection} onChange={(e) => setSelection(e.target.value)} style={{ fontSize: 13 }}>
+                {hasOverview && <option value={OVERVIEW}>— Overview (ALL individuals) —</option>}
+                {data.trackLabels.map((label) => (
+                  <option key={label} value={label}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
+        </section>
 
-      {!data ? (
-        <p style={{ color: "#666", fontSize: 14 }}>
-          Load a tracks CSV (or a whole folder of them) above to get started. Nothing you load is ever sent
-          anywhere - it's read directly off your disk and stays in this browser tab.
-        </p>
-      ) : selection === OVERVIEW ? (
-        <OverviewView data={data} settings={settings} onJumpToTrack={setSelection} bgImage={bgImage} />
-      ) : (
-        <SingleTrackView data={data} label={selection} settings={settings} />
-      )}
+        <SettingsBar settings={settings} onChange={setSettings} />
+      </aside>
+
+      <main style={{ flex: 1, minWidth: 0, overflow: "auto", padding: 16, boxSizing: "border-box" }}>
+        {(fileErrors.length > 0 || bgErrors.length > 0) && (
+          <div style={{ color: "#c0392b", fontSize: 12, marginBottom: 12 }}>
+            {[...fileErrors, ...bgErrors].map((msg, i) => (
+              <div key={i}>{msg}</div>
+            ))}
+          </div>
+        )}
+
+        {!data ? (
+          <p style={{ color: "#666", fontSize: 14 }}>
+            Load a tracks CSV (or a whole folder of them) from the sidebar to get started. Nothing you load is
+            ever sent anywhere - it's read directly off your disk and stays in this browser tab.
+          </p>
+        ) : selection === OVERVIEW ? (
+          <OverviewView data={data} settings={settings} onJumpToTrack={setSelection} bgImage={bgImage} />
+        ) : (
+          <SingleTrackView data={data} label={selection} settings={settings} />
+        )}
+      </main>
     </div>
   );
 }
 
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ fontSize: 11, fontWeight: 600, color: "#888", textTransform: "uppercase", letterSpacing: 0.3 }}>
+      {children}
+    </div>
+  );
+}
+
+const fieldRow: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 8,
+};
+const numberInput: React.CSSProperties = { width: 60 };
+
 function SettingsBar({ settings, onChange }: { settings: Settings; onChange: (s: Settings) => void }) {
   return (
-    <div style={{ display: "flex", gap: 10, fontSize: 12, marginLeft: "auto", alignItems: "center", flexWrap: "wrap" }}>
-      <label>
-        FPS{" "}
+    <section style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 12 }}>
+      <SectionLabel>Settings</SectionLabel>
+      <label style={fieldRow}>
+        FPS
         <input
           type="number"
           value={settings.fps}
-          style={{ width: 50 }}
+          style={numberInput}
           onChange={(e) => onChange({ ...settings, fps: Number(e.target.value) || 1 })}
         />
       </label>
-      <label>
-        Px scale{" "}
+      <label style={fieldRow}>
+        Px scale
         <input
           type="number"
           step="0.01"
           value={settings.pxScale}
-          style={{ width: 55 }}
+          style={numberInput}
           onChange={(e) => onChange({ ...settings, pxScale: Number(e.target.value) || 1 })}
         />
       </label>
-      <label>
-        Min speed{" "}
+      <label style={fieldRow}>
+        Min speed
         <input
           type="number"
           value={settings.minSpeed}
-          style={{ width: 50 }}
+          style={numberInput}
           onChange={(e) => onChange({ ...settings, minSpeed: Number(e.target.value) || 0 })}
         />
       </label>
-      <label>
-        Max ROI%{" "}
+      <label style={fieldRow}>
+        Max ROI%
         <input
           type="number"
           value={settings.roiFilterPct}
-          style={{ width: 50 }}
+          style={numberInput}
           onChange={(e) => onChange({ ...settings, roiFilterPct: Number(e.target.value) || 0 })}
         />
       </label>
-      <label>
-        Pol angle{" "}
+      <label style={fieldRow}>
+        Pol angle
         <input
           type="number"
           value={settings.polAngle}
-          style={{ width: 50 }}
+          style={numberInput}
           onChange={(e) => onChange({ ...settings, polAngle: Number(e.target.value) || 0 })}
         />
       </label>
-      <label>
+      <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <input
           type="checkbox"
           checked={settings.showPolLine}
           onChange={(e) => onChange({ ...settings, showPolLine: e.target.checked })}
-        />{" "}
+        />
         Show pol line
       </label>
-      <label>
-        <input
-          type="checkbox"
-          checked={settings.timeCutSec != null}
-          onChange={(e) => onChange({ ...settings, timeCutSec: e.target.checked ? 0 : null })}
-        />{" "}
-        Time cut (s){" "}
+      <label style={fieldRow}>
+        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <input
+            type="checkbox"
+            checked={settings.timeCutSec != null}
+            onChange={(e) => onChange({ ...settings, timeCutSec: e.target.checked ? 0 : null })}
+          />
+          Time cut (s)
+        </span>
         <input
           type="number"
           disabled={settings.timeCutSec == null}
           value={settings.timeCutSec ?? 0}
-          style={{ width: 50 }}
+          style={numberInput}
           onChange={(e) => onChange({ ...settings, timeCutSec: Number(e.target.value) || 0 })}
         />
       </label>
-      <label>
+      <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <input
           type="checkbox"
           checked={settings.lockSpeedAxis}
           onChange={(e) => onChange({ ...settings, lockSpeedAxis: e.target.checked })}
-        />{" "}
+        />
         Lock speed axis
       </label>
-      <label>
-        Speed pctile{" "}
+      <label style={fieldRow}>
+        Speed pctile
         <input
           type="number"
           min={1}
           max={100}
           disabled={!settings.lockSpeedAxis}
           value={settings.speedPercentile}
-          style={{ width: 45 }}
+          style={numberInput}
           onChange={(e) => onChange({ ...settings, speedPercentile: Number(e.target.value) || 95 })}
         />
       </label>
-      <label>
+      <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <input
           type="checkbox"
           checked={settings.lockHistAxis}
           onChange={(e) => onChange({ ...settings, lockHistAxis: e.target.checked })}
-        />{" "}
+        />
         Lock hist Y axis
       </label>
-      <label>
-        Color{" "}
+      <label style={fieldRow}>
+        Color
         <select
           value={settings.colorMode}
           onChange={(e) => onChange({ ...settings, colorMode: e.target.value as Settings["colorMode"] })}
@@ -429,6 +469,6 @@ function SettingsBar({ settings, onChange }: { settings: Settings; onChange: (s:
           <option value="speed">speed</option>
         </select>
       </label>
-    </div>
+    </section>
   );
 }
