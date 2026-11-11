@@ -1067,30 +1067,42 @@ function TrackPlotter()
                 SI, meanAbsTurn, netDisp, posUnit));
         end
 
-        % ── Panel 2: Speed + Direction timeseries ──────────────────────────
-        % Spans columns 2-4 of the 4-column grid (col1 is Panel 1 above/
-        % below it); Panel 4 (Speed Distribution) moved to the bottom row
-        % to free this width, so the layout reads as 2 rows x 4 columns.
-        ax2pos = [0.30 rBot+0.51*rowH+30/830 0.67 0.38*rowH];
-        ax2 = axes('Parent',parent,'Position',ax2pos);
-        hold(ax2,'on'); ax2.Color='w'; grid(ax2,'on'); box(ax2,'on');
+        % ── Panel 2: Direction + Speed timeseries ───────────────────────────
+        % Two long stacked panels — Direction on top, Speed on bottom — each
+        % with its own y-axis (rather than one plot with dual axes). Both
+        % span columns 2-4 of the 4-column grid (col1 is Panel 1 above/below
+        % them); Panel 4 (Speed Distribution) moved to the bottom row to
+        % free this width, so the layout reads as 2 rows x 4 columns.
+        panel2Y0 = rBot+0.51*rowH+30/830;
+        panel2H  = 0.38*rowH;
+        gap2     = 0.02;
+        halfH    = (panel2H - gap2) / 2;
+        spdPos = [0.30 panel2Y0           0.67 halfH];
+        dirPos = [0.30 panel2Y0+halfH+gap2 0.67 halfH];
         figGrey = [0.45 0.45 0.50];
+
+        ax2d = axes('Parent',parent,'Position',dirPos);
+        hold(ax2d,'on'); ax2d.Color='w'; grid(ax2d,'on'); box(ax2d,'on');
+        ax2d.XColor=[0.3 0.3 0.3]; ax2d.YColor=[0.3 0.3 0.3];
+        ax2d.GridColor=[0.88 0.88 0.88]; ax2d.GridAlpha=1;
+        xlabel(ax2d,'Frame','FontSize',8);
+        ylabel(ax2d,'Dir (°)','FontSize',8);
+        t2d = title(ax2d,'Direction','FontSize',8);
+        t2d.Units = 'pixels'; t2d.Position(2) = t2d.Position(2) + 30;
+        ax2d.YLim=[-180 180]; ax2d.YTick=[-180 -90 0 90 180];
+        ax2d.YTickLabel={'±180','−90','0','90','180'};
+        plot(ax2d,[1 nFrames],[0 0],':','Color',[0.75 0.75 0.75],'LineWidth',0.8);
+
+        ax2 = axes('Parent',parent,'Position',spdPos);
+        hold(ax2,'on'); ax2.Color='w'; grid(ax2,'on'); box(ax2,'on');
         ax2.XColor=[0.3 0.3 0.3]; ax2.YColor=figGrey;
         ax2.GridColor=[0.88 0.88 0.88]; ax2.GridAlpha=1;
         xlabel(ax2,'Frame','FontSize',8);
         ylabel(ax2,['Speed (' spdUnit ')'],'FontSize',8,'Color',figGrey);
-        t2 = title(ax2,'Speed & Direction','FontSize',8);
-        t2.Units = 'pixels'; t2.Position(2) = t2.Position(2) + 30;
+        title(ax2,'Speed','FontSize',8);
 
-        ax2r = axes('Parent',parent,'Position',ax2pos, ...
-            'YAxisLocation','right','Color','none', ...
-            'XColor','none','YColor',col,'FontSize',7,'Box','off','XTick',[]);
-        hold(ax2r,'on');
-        ylabel(ax2r,'Dir (°)','FontSize',8,'Color',col);
-        ax2r.YLim=[-180 180]; ax2r.YTick=[-180 -90 0 90 180];
-        ax2r.YTickLabel={'±180','−90','0','90','180'};
-        linkaxes([ax2 ax2r],'x');
-        plot(ax2r,[1 nFrames],[0 0],':','Color',[0.75 0.75 0.75],'LineWidth',0.8);
+        linkaxes([ax2d ax2],'x');
+
         if ~isempty(fr)
             scatter(ax2,  fr,   sv_smooth, 5, [0.72 0.72 0.72], 'filled');
             if ~isempty(fr_d)
@@ -1099,16 +1111,18 @@ function TrackPlotter()
                 else
                     cidxD = max(1, round((fr_d-1)/max(nFrames-1,1)*255)+1);
                 end
-                scatter(ax2r, fr_d, dv_d, 5, cmap(cidxD,:), 'filled', 'MarkerFaceAlpha',0.65);
+                scatter(ax2d, fr_d, dv_d, 5, cmap(cidxD,:), 'filled', 'MarkerFaceAlpha',0.65);
             end
             % Smoothed trend lines, drawn on top of the raw/smoothed scatter.
             % Speed already has a 5-frame moving average (sv_smooth); just
             % draw it as a line too. Direction needs a CIRCULAR moving
             % average (plain movmean on degrees breaks at the ±180° wrap,
             % e.g. averaging +179° and -179° would wrongly give ~0°) — done
-            % via the unit-vector components, then re-broken into separate
-            % segments at any remaining wrap so the line doesn't draw a
-            % spurious vertical jump across it.
+            % via the unit-vector components. The direction line is colored
+            % by the same time/speed scheme as its scatter, via gradientLine
+            % (plot() only takes one solid color per line, so it's split
+            % into short same-colored chunks, breaking at the ±180° wrap so
+            % no chunk bridges it).
             plot(ax2, fr(:), sv_smooth(:), '-', 'Color',[0.30 0.30 0.30], 'LineWidth',1.1);
             if numel(dv) >= 5
                 dv_sm = atan2d(movmean(sind(dv(:)),5), movmean(cosd(dv(:)),5));
@@ -1116,20 +1130,17 @@ function TrackPlotter()
                 dv_sm = dv(:);
             end
             if ~isempty(dv_sm)
-                frW = fr(:);  dvW = dv_sm;
-                wrapAt = find(abs(diff(dvW)) > 180);
-                for k = numel(wrapAt):-1:1
-                    wi = wrapAt(k);
-                    dvW = [dvW(1:wi); NaN; dvW(wi+1:end)]; %#ok<AGROW>
-                    frW = [frW(1:wi); frW(wi); frW(wi+1:end)]; %#ok<AGROW>
+                if useSpeedColor
+                    gradientLine(ax2d, fr(:), dv_sm, sv_raw(:), spdIdx, cmap, 8, 180);
+                else
+                    gradientLine(ax2d, fr(:), dv_sm, fr(:),     frmIdx, cmap, 8, 180);
                 end
-                plot(ax2r, frW, dvW, '-', 'Color', col, 'LineWidth', 1.1);
             end
-            ax2.XLim=[1 nFrames];
+            ax2.XLim=[1 nFrames];  ax2d.XLim=[1 nFrames];
             ymax2 = max(prctile(sv_smooth,95)*1.15, 1);
             if spdAxisMax > 0, ymax2 = spdAxisMax; end
             ax2.YLim=[0 ymax2];
-            ax2t = axes('Parent',parent,'Position',ax2pos, ...
+            ax2t = axes('Parent',parent,'Position',dirPos, ...
                 'XAxisLocation','top','Color','none', ...
                 'XColor',[0.3 0.3 0.3],'YColor','none', ...
                 'FontSize',7,'Box','off','YTick',[]);
@@ -1140,7 +1151,8 @@ function TrackPlotter()
         if isfield(st,'timeCut') && st.timeCut && isfield(st,'timeCutVal') && isfinite(st.timeCutVal)
             cutIdx = floor(st.timeCutVal * fps) + 1;
             if cutIdx >= 1 && cutIdx <= nFrames
-                xline(ax2, cutIdx, '--', 'Color',[0.80 0.15 0.15], 'LineWidth',1.5);
+                xline(ax2,  cutIdx, '--', 'Color',[0.80 0.15 0.15], 'LineWidth',1.5);
+                xline(ax2d, cutIdx, '--', 'Color',[0.80 0.15 0.15], 'LineWidth',1.5);
             end
         end
 
@@ -2243,6 +2255,35 @@ function TrackPlotter()
             end
             % Bar outline
             plot(ax, [xlo xhi xhi xlo xlo], [0 0 n n 0], 'k-', 'LineWidth',0.5);
+        end
+    end
+
+    function gradientLine(ax, x, y, cval, idxFn, cm, chunkSize, wrapAt)
+    % Plots (x,y) as a sequence of short solid-colored segments, so the
+    % line's color can vary continuously along its length (plot() only
+    % takes a single color per line, unlike scatter's per-point markers).
+    % Breaks wherever y is non-finite (a dropout) or jumps by more than
+    % wrapAt (e.g. the ±180° bearing wrap), so a segment never bridges a
+    % gap it shouldn't; consecutive chunks share an endpoint so there's no
+    % visible gap between them.
+        curX = [];  curY = [];  curC = [];
+        for i = 1:numel(x)
+            broken = ~isfinite(y(i)) || (i > 1 && isfinite(y(i-1)) && abs(y(i)-y(i-1)) > wrapAt);
+            if broken
+                if numel(curX) >= 2
+                    plot(ax, curX, curY, '-', 'Color', cm(idxFn(mean(curC)),:), 'LineWidth', 1.3);
+                end
+                curX = [];  curY = [];  curC = [];
+                if ~isfinite(y(i)), continue; end
+            end
+            curX(end+1) = x(i);  curY(end+1) = y(i);  curC(end+1) = cval(i); %#ok<AGROW>
+            if numel(curX) >= chunkSize
+                plot(ax, curX, curY, '-', 'Color', cm(idxFn(mean(curC)),:), 'LineWidth', 1.3);
+                curX = curX(end);  curY = curY(end);  curC = curC(end);
+            end
+        end
+        if numel(curX) >= 2
+            plot(ax, curX, curY, '-', 'Color', cm(idxFn(mean(curC)),:), 'LineWidth', 1.3);
         end
     end
 
