@@ -411,9 +411,21 @@ function TrackPlotter()
         if isempty(src), return; end
         for fi = 1:numel(S.files)
             dst = src;
-            % Preserve each file's own pol angle
+            % Preserve each file's own pol angle and ROI (arena position/size
+            % is specific to that file's video, not something to copy across).
+            % A file with no settings yet hasn't been auto-filled from its own
+            % CSV's ROI_cx/cy/diam columns (loadFile does that on first visit,
+            % and only when roiD isn't already >0) — zero it out here rather
+            % than taking the source's ROI, so that auto-fill still runs then.
             if fi <= numel(S.fileSettings) && ~isempty(S.fileSettings{fi})
                 dst.polAng = S.fileSettings{fi}.polAng;
+                dst.roiCx  = S.fileSettings{fi}.roiCx;
+                dst.roiCy  = S.fileSettings{fi}.roiCy;
+                dst.roiD   = S.fileSettings{fi}.roiD;
+            else
+                dst.roiCx = 0;
+                dst.roiCy = 0;
+                dst.roiD  = 0;
             end
             S.fileSettings{fi} = dst;
         end
@@ -421,7 +433,7 @@ function TrackPlotter()
         refreshListDisplay();
         saveState();
         S = getappdata(fig,'S');
-        S.lblStatus.String = sprintf('Settings copied to all %d files (pol. angle kept per-file).', numel(S.files));
+        S.lblStatus.String = sprintf('Settings copied to all %d files (pol. angle and ROI kept per-file).', numel(S.files));
         setappdata(fig,'S',S);
     end
 
