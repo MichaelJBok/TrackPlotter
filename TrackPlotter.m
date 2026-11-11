@@ -551,12 +551,12 @@ function TrackPlotter()
             S.edtROICenter.String = '0,0';
             S.edtROIDiam.String   = '0';
         end
-        % Default to overview for a multi-individual file until the user has
-        % explicitly picked a concrete individual for THIS file (viewOverview,
-        % persisted per-file) — not just "has this file been visited before",
-        % which would flip to the first track as soon as any default settings
-        % got saved for it.
-        if hasOverviewOption(names) && (~isfield(st,'viewOverview') || st.viewOverview)
+        % Overview is always the landing view for a file: re-selecting a file
+        % you'd previously switched to an individual track in still returns
+        % to its overview first, rather than remembering that last pick.
+        % (The pick itself is still remembered for batch/export purposes —
+        % see saveCurrentSettings — just not as what to show on return.)
+        if hasOverviewOption(names)
             S.popAnimal.Value = 1;
         else
             S.popAnimal.Value = popupValueFromAnimalIndex(min(st.animalIdx, numel(names)), names);
@@ -602,8 +602,7 @@ function TrackPlotter()
             'roiCx',    roiCx, ...
             'roiCy',    roiCy, ...
             'roiD',     roiD, ...
-            'animalIdx', animalIdxToSave, ...
-            'viewOverview', isOverviewSelected(S));
+            'animalIdx', animalIdxToSave);
         setappdata(fig,'S',S);
         refreshListDisplay();
         saveState();
@@ -2181,7 +2180,7 @@ function TrackPlotter()
 
     function st = defSt()
         st = struct('fps',10,'pxScale',1,'minSpd',0,'polAng',0, ...
-                    'roiCx',0,'roiCy',0,'roiD',0,'animalIdx',1,'viewOverview',true);
+                    'roiCx',0,'roiCy',0,'roiD',0,'animalIdx',1);
     end
 
     function [a, b] = parseCoordPair(str)
