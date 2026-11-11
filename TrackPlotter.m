@@ -1068,7 +1068,10 @@ function TrackPlotter()
         end
 
         % ── Panel 2: Speed + Direction timeseries ──────────────────────────
-        ax2pos = [0.34 rBot+0.51*rowH+30/830 0.28 0.38*rowH];
+        % Spans columns 2-4 of the 4-column grid (col1 is Panel 1 above/
+        % below it); Panel 4 (Speed Distribution) moved to the bottom row
+        % to free this width, so the layout reads as 2 rows x 4 columns.
+        ax2pos = [0.30 rBot+0.51*rowH+30/830 0.67 0.38*rowH];
         ax2 = axes('Parent',parent,'Position',ax2pos);
         hold(ax2,'on'); ax2.Color='w'; grid(ax2,'on'); box(ax2,'on');
         figGrey = [0.45 0.45 0.50];
@@ -1144,6 +1147,13 @@ function TrackPlotter()
         % ── Panel 3: Rose (360° direction histogram) — bottom-left ───────────
         ax3 = axes('Parent',parent,'Position',[0.04 rBot+0.07*rowH 0.24 0.38*rowH]);
         hold(ax3,'on'); axis(ax3,'equal'); axis(ax3,'off'); ax3.Color='w';
+        % Same fix as Panel 1 / renderOverview's direction plot: this rose is
+        % drawn from the same raw atan2d(dy,dx) bearings, in plain math
+        % convention, but Panel 1 displays Y reversed (video convention) —
+        % reverse this axis too so a direction that visually points down in
+        % the track plot also points down here (0°/180° stay on the left-
+        % right axis; it's the top/bottom labels that swap).
+        ax3.YDir = 'reverse';
         title(ax3,'Direction (360°)','FontSize',8);
         dr3 = atan2(dy(vp), dx(vp));
         if ~isempty(dr3)
@@ -1207,8 +1217,8 @@ function TrackPlotter()
             end
         end
 
-        % ── Panel 4: Speed histogram — top-right ──────────────────────────
-        ax4 = axes('Parent',parent,'Position',[0.70 rBot+0.51*rowH+30/830 0.26 0.40*rowH]);
+        % ── Panel 4: Speed histogram — bottom row, column 4 ──────────────────
+        ax4 = axes('Parent',parent,'Position',[0.76 rBot+0.07*rowH 0.21 0.38*rowH]);
         hold(ax4,'on'); ax4.Color='w'; grid(ax4,'on'); box(ax4,'on');
         ax4.XColor=[0.3 0.3 0.3]; ax4.YColor=[0.3 0.3 0.3];
         ax4.GridColor=[0.88 0.88 0.88]; ax4.GridAlpha=1;
@@ -1246,7 +1256,7 @@ function TrackPlotter()
         end
 
         % ── Panel 5: Speed vs Direction scatter ────────────────────────────
-        ax5 = axes('Parent',parent,'Position',[0.34 rBot+0.07*rowH 0.28 0.38*rowH]);
+        ax5 = axes('Parent',parent,'Position',[0.30 rBot+0.07*rowH 0.21 0.38*rowH]);
         hold(ax5,'on'); ax5.Color='w'; grid(ax5,'on'); box(ax5,'on');
         ax5.XColor=[0.3 0.3 0.3]; ax5.YColor=[0.3 0.3 0.3];
         ax5.GridColor=[0.88 0.88 0.88]; ax5.GridAlpha=1;
@@ -1288,7 +1298,7 @@ function TrackPlotter()
         end
 
         % ── Panel 6: Direction 0–180° (axial) ──────────────────────────────
-        ax6 = axes('Parent',parent,'Position',[0.70 rBot+0.07*rowH 0.26 0.38*rowH]);
+        ax6 = axes('Parent',parent,'Position',[0.53 rBot+0.07*rowH 0.21 0.38*rowH]);
         hold(ax6,'on'); ax6.Color='w'; grid(ax6,'on'); box(ax6,'on');
         ax6.XColor=[0.3 0.3 0.3]; ax6.YColor=[0.3 0.3 0.3];
         ax6.GridColor=[0.88 0.88 0.88]; ax6.GridAlpha=1;
