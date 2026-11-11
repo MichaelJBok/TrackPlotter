@@ -644,7 +644,7 @@ function TrackPlotter()
         delete(findobj(S.plotPanel,'Type','axes'));
         try
             if overview
-                renderOverview(S.plotPanel, S.data, S.animalNames, st, S.files{S.lstFiles.Value});
+                renderOverview(S.plotPanel, S.data, S.animalNames, st, S.files{S.lstFiles.Value}, S.folder);
                 S.lblStatus.String = sprintf('%s  |  Overview  |  %d individuals  |  %d frames', ...
                     S.files{S.lstFiles.Value}, numel(S.animalNames), height(S.data));
             else
@@ -705,7 +705,7 @@ function TrackPlotter()
         fout.PaperSize     = [28 18];
         fout.PaperPosition = [0 0 28 18];
         if overview
-            renderOverview(fout, S.data, S.animalNames, st, S.files{idx});
+            renderOverview(fout, S.data, S.animalNames, st, S.files{idx}, S.folder);
         else
             renderInto(fout, S.data, lbl, st, S.files{idx});
         end
@@ -809,7 +809,7 @@ function TrackPlotter()
                 foutOv.PaperSize     = [28 18];
                 foutOv.PaperPosition = [0 0 28 18];
 
-                renderOverview(foutOv, T, names, st, S.files{fi});
+                renderOverview(foutOv, T, names, st, S.files{fi}, S.folder);
 
                 outPathOv = fullfile(outDir, sprintf('%s_overview.pdf', stem));
                 savedOv = false;
@@ -1262,7 +1262,7 @@ function TrackPlotter()
     %  Overview — all individuals of a multi-individual file at a glance
     %% ══════════════════════════════════════════════════════════════════════════
 
-    function renderOverview(parent, T, ovNames, st, fname)
+    function renderOverview(parent, T, ovNames, st, fname, folder)
         nInd    = numel(ovNames);
         fps     = st.fps;
         pxScale = st.pxScale;
@@ -1278,6 +1278,19 @@ function TrackPlotter()
             posUnit = 'cm';  spdUnit = 'cm/s';
         end
         cmapInd = lines(max(nInd,1));
+
+        % Background frame: AnimalTracker writes a clean reference frame to
+        % {folder}/../sessions/{stem}_bg.png (sibling of the export folder
+        % this CSV lives in) for most files — far more complete coverage
+        % than the tracked output videos, and no video decoding needed.
+        bgImg = [];
+        if nargin >= 6 && ~isempty(folder)
+            stem0 = regexprep(fname, '_tracks\.csv$', '');
+            bgCand = fullfile(fileparts(folder), 'sessions', [stem0 '_bg.png']);
+            if exist(bgCand, 'file')
+                try, bgImg = imread(bgCand); catch, bgImg = []; end
+            end
+        end
 
         % ── Per-individual positions & stats ────────────────────────────────
         posAll     = cell(nInd,1);
@@ -1341,6 +1354,18 @@ function TrackPlotter()
         xlabel(axA,['X (' posUnit ')'],'FontSize',8);
         ylabel(axA,['Y (' posUnit ')'],'FontSize',8);
         title(axA,'All individuals — XY tracks','FontSize',9);
+
+        if ~isempty(bgImg)
+            % Image row 1 is the physical top of the frame, but Track_X/Y are
+            % plotted here on a plain (non-reversed) Y-up axis like every
+            % other panel in this app — so place row 1 at the HIGH end of
+            % YData (descending top->bottom) to visually match the tracks
+            % rather than flipping this axis (which would be inconsistent
+            % with renderInto's track panel and every exported figure so far).
+            imgH = size(bgImg,1);  imgW = size(bgImg,2);
+            image(axA, 'XData',[0 imgW]*pxScale, 'YData',[imgH 0]*pxScale, 'CData',bgImg);
+            grid(axA,'off');
+        end
 
         legH = gobjects(nInd,1);
         for ovI = 1:nInd
@@ -1621,7 +1646,11 @@ function TrackPlotter()
 '  from the dropdown to analyze in full. Batch save and the'
 '  export (💾) button also save this overview alongside the'
 '  per-individual figure. Export CSV writes one row per'
-'  individual (not just the one currently selected).'
+'  individual (not just the one currently selected). If the'
+'  folder has a sibling "sessions" directory with a matching'
+'  {file}_bg.png (AnimalTracker''s clean reference frame), the'
+'  XY-track panel draws it behind the tracks for arena context;'
+'  missing for a file, the panel just falls back to a plain plot.'
 ''
 'TRACK SETTINGS (per file)'
 '  FPS          Frame rate of the recording. Used to convert'
