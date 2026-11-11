@@ -207,3 +207,28 @@ export function percentile(values: number[], pct: number): number {
   if (lo === hi) return s[lo];
   return s[lo] + (s[hi] - s[lo]) * (rank - lo);
 }
+
+/** Maps each value to its empirical-CDF rank in [0,1] (histogram
+ * equalization). Colors a speed-colored plot should use this, not the raw
+ * speed: a linear min-max scaling lets a handful of fast outliers stretch
+ * the color range so almost every point (the typical/slow majority) ends up
+ * crammed into one end of it. Ranking instead spreads color by how the
+ * values are actually distributed, so the bulk of the data uses the bulk of
+ * the colorscale. Matches the MATLAB app's speed-color mapping. Ties share
+ * the average rank of the tied run. */
+export function rankTransform(values: number[]): number[] {
+  const n = values.length;
+  const ranks = new Array(n).fill(NaN);
+  const order = values.map((_, i) => i).filter((i) => Number.isFinite(values[i]));
+  order.sort((a, b) => values[a] - values[b]);
+  const m = order.length;
+  let i = 0;
+  while (i < m) {
+    let j = i;
+    while (j + 1 < m && values[order[j + 1]] === values[order[i]]) j++;
+    const avgRank = (i + j) / 2 / (m - 1 || 1);
+    for (let k = i; k <= j; k++) ranks[order[k]] = avgRank;
+    i = j + 1;
+  }
+  return ranks;
+}

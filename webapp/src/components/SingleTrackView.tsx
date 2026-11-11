@@ -8,6 +8,7 @@ import {
   circularMovingAverage,
   axialMeanR,
   percentile,
+  rankTransform,
 } from "../lib/analysis";
 import { coloredLineChunks, PARULA_COLORSCALE } from "../lib/colorLine";
 import { basePlotConfig, baseLayout, gridColor } from "../lib/plotDefaults";
@@ -79,7 +80,23 @@ export default function SingleTrackView({ data, label, settings }: Props) {
   const path = computePathStats(x, y, settings.pxScale, dirAbove);
   const { meanDeg, R } = axialMeanR(dirAbove, settings.polAngle);
 
-  const colorVals = settings.colorMode === "speed" ? speedRaw : frame;
+  // Speed coloring uses each point's rank in the speed distribution, not the
+  // raw value - otherwise a few fast outliers stretch the color scale and
+  // the slow/typical majority all reads as nearly the same color.
+  const colorVals = settings.colorMode === "speed" ? rankTransform(speedRaw) : frame;
+
+  // speedRaw/frame are per-step (one entry per valid consecutive pair, keyed
+  // by the *later* point's frame number), but the Track panel colors every
+  // position in x/y - a different, longer array. Reindex each step's speed
+  // onto the position it ends at so the two line up; the very first point
+  // (which has no preceding step) borrows the next one's value.
+  const speedByPosition = new Array(x.length).fill(NaN);
+  for (let k = 0; k < frame.length; k++) speedByPosition[frame[k] - 1] = speedRaw[k];
+  if (speedByPosition.length > 1 && !Number.isFinite(speedByPosition[0])) {
+    speedByPosition[0] = speedByPosition[1];
+  }
+  const trackColorVals = settings.colorMode === "speed" ? rankTransform(speedByPosition) : frame;
+
   const frameRange: [number, number] = frame.length ? [frame[0], frame[frame.length - 1]] : [0, 1];
 
   const [selectedFrame, setSelectedFrame] = useState<number | null>(null);
@@ -120,8 +137,8 @@ export default function SingleTrackView({ data, label, settings }: Props) {
         }}
       >
         <div style={{ gridColumn: "1", gridRow: "1" }}>
-          <TrackPanel x={x} y={y} roi={data.roi} colorVals={frame} colorMode={settings.colorMode}
-            speedForColor={speedRaw} pathStats={path} selectedFrame={selectedFrame} onSelectFrame={setSelectedFrame} />
+          <TrackPanel x={x} y={y} roi={data.roi} colorVals={trackColorVals}
+            pathStats={path} selectedFrame={selectedFrame} onSelectFrame={setSelectedFrame} />
         </div>
         <div
           style={{
@@ -155,10 +172,10 @@ export default function SingleTrackView({ data, label, settings }: Props) {
 }
 
 function TrackPanel({
-  x, y, roi, colorVals, colorMode, speedForColor, pathStats, selectedFrame, onSelectFrame,
+  x, y, roi, colorVals, pathStats, selectedFrame, onSelectFrame,
 }: {
   x: number[]; y: number[]; roi: TracksData["roi"];
-  colorVals: number[]; colorMode: Settings["colorMode"]; speedForColor: number[];
+  colorVals: number[];
   pathStats: { straightness: number; meanAbsTurnDeg: number; netDisp: number };
   selectedFrame: number | null; onSelectFrame: (frame: number) => void;
 }) {
@@ -176,7 +193,6 @@ function TrackPanel({
         },
       ]
     : [];
-  const colorSrc = colorMode === "speed" ? speedForColor : colorVals;
   const subtitle = Number.isFinite(pathStats.straightness)
     ? `SI=${pathStats.straightness.toFixed(2)} | turn=${pathStats.meanAbsTurnDeg.toFixed(1)}° | disp=${pathStats.netDisp.toFixed(0)}px`
     : "";
@@ -199,7 +215,7 @@ function TrackPanel({
           y,
           type: "scattergl",
           mode: "markers",
-          marker: { size: 5, color: colorSrc, colorscale: PARULA_COLORSCALE },
+          marker: { size: 5, color: colorVals, colorscale: PARULA_COLORSCALE },
           hoverinfo: "none", // "skip" (unlike "none") also suppresses click events
         },
         ...(hasHighlight
@@ -304,7 +320,9 @@ function DirectionPanel({
       ]}
       layout={baseLayout("Direction", {
         xaxis: {
-          title: { text: "Frame" },
+          // No title/ticklabels here - this axis is shared with (and already
+          // labeled by) the Speed panel directly below, on the same xRange.
+          showticklabels: false,
           gridcolor: gridColor,
           domain: [0, 1],
           range: xRange,
