@@ -5,9 +5,9 @@ import {
   computeFrameSeries,
   computePathStats,
   circularMovingAverage,
-  breakAtWrap,
   axialMeanR,
 } from "../lib/analysis";
+import { coloredLineChunks } from "../lib/colorLine";
 import { basePlotConfig, baseLayout, gridColor } from "../lib/plotDefaults";
 
 interface Props {
@@ -37,7 +37,7 @@ export default function SingleTrackView({ data, label, settings }: Props) {
       style={{
         display: "grid",
         gridTemplateColumns: "repeat(4, 1fr)",
-        gridTemplateRows: "340px 300px",
+        gridTemplateRows: "480px 300px",
         gap: 10,
       }}
     >
@@ -45,14 +45,17 @@ export default function SingleTrackView({ data, label, settings }: Props) {
         <TrackPanel x={x} y={y} roi={data.roi} colorVals={frame} colorMode={settings.colorMode}
           speedForColor={speedRaw} pathStats={path} />
       </div>
-      <div style={{ gridColumn: "2 / span 3", gridRow: "1" }}>
-        <SpeedDirectionPanel
-          frame={frame}
-          speedSmooth={speedSmooth}
-          dirDeg={dirDeg}
-          fps={settings.fps}
-          colorVals={colorVals}
-        />
+      <div
+        style={{
+          gridColumn: "2 / span 3",
+          gridRow: "1",
+          display: "grid",
+          gridTemplateRows: "1fr 1fr",
+          gap: 8,
+        }}
+      >
+        <DirectionPanel frame={frame} dirDeg={dirDeg} fps={settings.fps} colorVals={colorVals} />
+        <SpeedPanel frame={frame} speedSmooth={speedSmooth} />
       </div>
       <div style={{ gridColumn: "1", gridRow: "2" }}>
         <DirectionRosePanel dirDeg={dirDeg} polAngle={settings.polAngle} />
@@ -119,25 +122,16 @@ function TrackPanel({
   );
 }
 
-function SpeedDirectionPanel({
-  frame, speedSmooth, dirDeg, fps, colorVals,
-}: { frame: number[]; speedSmooth: number[]; dirDeg: number[]; fps: number; colorVals: number[] }) {
+function DirectionPanel({
+  frame, dirDeg, fps, colorVals,
+}: { frame: number[]; dirDeg: number[]; fps: number; colorVals: number[] }) {
   const dirSmooth = circularMovingAverage(dirDeg, 5);
-  const broken = breakAtWrap(frame, dirSmooth);
   const durationSec = frame.length ? frame[frame.length - 1] / fps : 0;
+  const lineChunks = coloredLineChunks(frame, dirSmooth, colorVals, 8, 180);
 
   return (
     <Plot
       data={[
-        {
-          x: frame,
-          y: speedSmooth,
-          type: "scatter",
-          mode: "lines",
-          line: { color: "#555", width: 1.5 },
-          name: "Speed",
-          yaxis: "y",
-        },
         {
           x: frame,
           y: dirDeg,
@@ -145,19 +139,19 @@ function SpeedDirectionPanel({
           mode: "markers",
           marker: { size: 4, color: colorVals, colorscale: "Viridis", opacity: 0.5 },
           name: "Direction",
-          yaxis: "y2",
+          hoverinfo: "skip",
         },
-        {
-          x: broken.frame,
-          y: broken.deg,
-          type: "scatter",
-          mode: "lines",
-          line: { color: "#2a78d6", width: 1.3 },
-          name: "Direction (smoothed)",
-          yaxis: "y2",
-        },
+        ...lineChunks.map((c) => ({
+          x: c.x,
+          y: c.y,
+          type: "scatter" as const,
+          mode: "lines" as const,
+          line: { color: c.color, width: 1.8 },
+          hoverinfo: "skip" as const,
+          showlegend: false,
+        })),
       ]}
-      layout={baseLayout("Speed & Direction", {
+      layout={baseLayout("Direction", {
         xaxis: {
           title: { text: "Frame" },
           gridcolor: gridColor,
@@ -169,15 +163,44 @@ function SpeedDirectionPanel({
           range: [0, durationSec],
           title: { text: "Time (s)", font: { size: 9 } },
         },
-        yaxis: { title: { text: "Speed (px/s)" }, gridcolor: gridColor },
-        yaxis2: {
+        yaxis: {
           title: { text: "Dir (°)" },
-          overlaying: "y",
-          side: "right",
+          gridcolor: gridColor,
           range: [-180, 180],
           tickvals: [-180, -90, 0, 90, 180],
         },
-        margin: { l: 50, r: 50, t: 40, b: 36 },
+        margin: { l: 50, r: 20, t: 40, b: 10 },
+      })}
+      config={basePlotConfig}
+      style={{ width: "100%", height: "100%" }}
+      useResizeHandler
+    />
+  );
+}
+
+function SpeedPanel({
+  frame, speedSmooth,
+}: { frame: number[]; speedSmooth: number[] }) {
+  return (
+    <Plot
+      data={[
+        {
+          x: frame,
+          y: speedSmooth,
+          type: "scatter",
+          mode: "lines",
+          line: { color: "#555", width: 1.5 },
+          name: "Speed",
+        },
+      ]}
+      layout={baseLayout("Speed", {
+        xaxis: {
+          title: { text: "Frame" },
+          gridcolor: gridColor,
+          domain: [0, 1],
+        },
+        yaxis: { title: { text: "Speed (px/s)" }, gridcolor: gridColor },
+        margin: { l: 50, r: 20, t: 24, b: 36 },
       })}
       config={basePlotConfig}
       style={{ width: "100%", height: "100%" }}
