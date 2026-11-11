@@ -991,6 +991,11 @@ function TrackPlotter()
         hold(ax1,'on'); ax1.Color='w'; grid(ax1,'on'); box(ax1,'on');
         ax1.XColor=[0.3 0.3 0.3]; ax1.YColor=[0.3 0.3 0.3];
         ax1.GridColor=[0.88 0.88 0.88]; ax1.GridAlpha=1;
+        % Track_X/Y follow video/image pixel convention (row 0 at the top,
+        % increasing downward) — match it here too (see renderOverview's
+        % Panel A) so a track looks right-side-up relative to the arena,
+        % and so the two views of the same file agree with each other.
+        ax1.YDir = 'reverse';
         xlabel(ax1,['X (' posUnit ')'],'FontSize',8);
         ylabel(ax1,['Y (' posUnit ')'],'FontSize',8);
         t1 = title(ax1,'Track','FontSize',8);
@@ -1272,6 +1277,8 @@ function TrackPlotter()
         if isfield(st,'roiCx'), roiCx = st.roiCx; end
         if isfield(st,'roiCy'), roiCy = st.roiCy; end
         if isfield(st,'roiD'),  roiD  = st.roiD;  end
+        polAng = 0;
+        if isfield(st,'polAng'), polAng = st.polAng; end
         if pxScale == 1
             posUnit = 'px';  spdUnit = 'px/s';
         else
@@ -1300,6 +1307,8 @@ function TrackPlotter()
         ovMeanSpd  = nan(nInd,1);
         ovMedSpd   = nan(nInd,1);
         ovSI       = nan(nInd,1);
+        ovMu       = nan(nInd,1);
+        ovR        = nan(nInd,1);
         for ovI = 1:nInd
             px = T.([ovNames{ovI} '_X']);
             py = T.([ovNames{ovI} '_Y']);
@@ -1316,6 +1325,21 @@ function TrackPlotter()
             sv = [];
             if any(vp), sv = sqrt(dx(vp).^2 + dy(vp).^2) * pxScale * fps; end
             dm = sv >= minSpd;
+
+            % Mean axial direction + vector strength (polaroid-corrected,
+            % doubled-angle), same convention as renderInto Panel 6 / the
+            % stats CSV's mean_dir_deg & vector_R columns.
+            mu = NaN;  Rv = NaN;
+            if any(vp)
+                dv_valid = atan2d(dy(vp), dx(vp));
+                dv_d = dv_valid(dm);
+                if ~isempty(dv_d)
+                    dir180 = mod(dv_d - polAng, 180);
+                    z  = mean(exp(1i * 2 * deg2rad(dir180)));
+                    Rv = abs(z);
+                    mu = mod(rad2deg(angle(z) / 2), 180);
+                end
+            end
 
             totalDist = 0;
             if any(vp), totalDist = sum(sqrt(dx(vp).^2 + dy(vp).^2)) * pxScale; end
@@ -1334,6 +1358,8 @@ function TrackPlotter()
             ovMeanSpd(ovI)  = meanSpd;
             ovMedSpd(ovI)   = medSpd;
             ovSI(ovI)       = SI;
+            ovMu(ovI)       = mu;
+            ovR(ovI)        = Rv;
         end
 
         % ── Title ────────────────────────────────────────────────────────────
@@ -1351,19 +1377,22 @@ function TrackPlotter()
         hold(axA,'on'); axA.Color='w'; grid(axA,'on'); box(axA,'on');
         axA.XColor=[0.3 0.3 0.3]; axA.YColor=[0.3 0.3 0.3];
         axA.GridColor=[0.88 0.88 0.88]; axA.GridAlpha=1;
+        % Track_X/Y follow video/image pixel convention (row 0 at the top,
+        % increasing downward), so this axis uses the matching "ij" sense
+        % (YDir reverse) rather than MATLAB's plot default — otherwise tracks
+        % plot upside-down relative to the arena. Scoped to this panel only:
+        % it's a display-only setting, so it doesn't touch any distance/
+        % speed/direction math, and renderInto's track panel is unaffected.
+        axA.YDir = 'reverse';
         xlabel(axA,['X (' posUnit ')'],'FontSize',8);
         ylabel(axA,['Y (' posUnit ')'],'FontSize',8);
         title(axA,'All individuals — XY tracks','FontSize',9);
 
         if ~isempty(bgImg)
-            % Image row 1 is the physical top of the frame, but Track_X/Y are
-            % plotted here on a plain (non-reversed) Y-up axis like every
-            % other panel in this app — so place row 1 at the HIGH end of
-            % YData (descending top->bottom) to visually match the tracks
-            % rather than flipping this axis (which would be inconsistent
-            % with renderInto's track panel and every exported figure so far).
+            % With YDir reversed to match, the image now takes its plain,
+            % un-transposed row order: row 1 (physical top) at y=0.
             imgH = size(bgImg,1);  imgW = size(bgImg,2);
-            image(axA, 'XData',[0 imgW]*pxScale, 'YData',[imgH 0]*pxScale, 'CData',bgImg);
+            image(axA, 'XData',[0 imgW]*pxScale, 'YData',[0 imgH]*pxScale, 'CData',bgImg);
             grid(axA,'off');
         end
 
@@ -1404,27 +1433,28 @@ function TrackPlotter()
         % ── Panel B: per-individual summary table ───────────────────────────
         axB = axes('Parent',parent,'Position',[0.52 0.50 0.45 0.42]); axis(axB,'off');
         title(axB,'Per-individual summary','FontSize',9);
-        hdrB = sprintf('%-10s %7s %7s %10s %10s %6s', 'Track', 'Valid%', ...
+        hdrB = sprintf('%-10s %7s %7s %10s %10s %6s %7s %5s', 'Track', 'Valid%', ...
             sprintf('Dist(%s)',posUnit), sprintf('Mean(%s)',spdUnit), ...
-            sprintf('Med(%s)',spdUnit), 'SI');
+            sprintf('Med(%s)',spdUnit), 'SI', 'Mu(deg)', 'R');
         text(axB, 0, 0.97, hdrB, 'FontName','Courier New','FontSize',8, ...
             'FontWeight','bold','VerticalAlignment','top','Units','normalized');
         rowGap = 0.84 / max(nInd,1);
         for ovI = 1:nInd
-            rowStr = sprintf('%-10s %6.0f%% %10.1f %10.2f %10.2f %6.2f', ...
+            rowStr = sprintf('%-10s %6.0f%% %10.1f %10.2f %10.2f %6.2f %7.1f %5.2f', ...
                 strrep(ovLabel{ovI},'_',' '), ovCoverage(ovI), ovDist(ovI), ...
-                ovMeanSpd(ovI), ovMedSpd(ovI), ovSI(ovI));
+                ovMeanSpd(ovI), ovMedSpd(ovI), ovSI(ovI), ovMu(ovI), ovR(ovI));
             yPos = 0.88 - rowGap*(ovI-1);
             text(axB, 0, yPos, rowStr, 'FontName','Courier New','FontSize',8, ...
                 'Color', cmapInd(ovI,:), 'VerticalAlignment','top','Units','normalized');
         end
+        tpSubtitle(axB, sprintf('Mu/R: mean axial direction (pol = %.0f°) & vector strength (0-1)', polAng));
 
         % ── Panel C: total distance by individual ───────────────────────────
-        axC = axes('Parent',parent,'Position',[0.52 0.08 0.195 0.32]);
+        axC = axes('Parent',parent,'Position',[0.52 0.08 0.12 0.32]);
         hold(axC,'on'); axC.Color='w'; grid(axC,'on'); box(axC,'on');
         axC.XColor=[0.3 0.3 0.3]; axC.YColor=[0.3 0.3 0.3];
         axC.GridColor=[0.88 0.88 0.88]; axC.GridAlpha=1;
-        ylabel(axC, sprintf('Total dist (%s)',posUnit), 'FontSize',8);
+        ylabel(axC, sprintf('Dist (%s)',posUnit), 'FontSize',8);
         title(axC, 'Distance', 'FontSize',8);
         for ovI = 1:nInd
             v = ovDist(ovI);  if isnan(v), v = 0; end
@@ -1435,11 +1465,11 @@ function TrackPlotter()
         axC.XTickLabelRotation = 45;
 
         % ── Panel D: mean speed by individual ────────────────────────────────
-        axD = axes('Parent',parent,'Position',[0.775 0.08 0.195 0.32]);
+        axD = axes('Parent',parent,'Position',[0.675 0.08 0.12 0.32]);
         hold(axD,'on'); axD.Color='w'; grid(axD,'on'); box(axD,'on');
         axD.XColor=[0.3 0.3 0.3]; axD.YColor=[0.3 0.3 0.3];
         axD.GridColor=[0.88 0.88 0.88]; axD.GridAlpha=1;
-        ylabel(axD, sprintf('Mean speed (%s)',spdUnit), 'FontSize',8);
+        ylabel(axD, sprintf('Speed (%s)',spdUnit), 'FontSize',8);
         title(axD, 'Speed', 'FontSize',8);
         for ovI = 1:nInd
             v = ovMeanSpd(ovI);  if isnan(v), v = 0; end
@@ -1448,6 +1478,32 @@ function TrackPlotter()
         axD.XLim = [0.3 nInd+0.7];
         axD.XTick = 1:nInd; axD.XTickLabel = strrep(ovLabel,'_',' ');
         axD.XTickLabelRotation = 45;
+
+        % ── Panel E: mean direction × R, polar (axial, mirrored like the
+        % cross-file summary figure's polar scatter) ────────────────────────
+        axE = axes('Parent',parent,'Position',[0.815 0.08 0.155 0.32]);
+        hold(axE,'on'); axis(axE,'equal'); axis(axE,'off'); axE.Color='w';
+        title(axE, sprintf('Direction (pol = %.0f°)', polAng), 'FontSize',8);
+        th_ring = linspace(0, 2*pi, 120);
+        for gr = [0.5 1.0]
+            plot(axE, gr*cos(th_ring), gr*sin(th_ring), '-', 'Color',[0.85 0.85 0.85], 'LineWidth',0.5);
+        end
+        cardThE = [0, pi/2, pi, -pi/2]; cardLblE = {'0°','90°','180°','-90°'};
+        for ci = 1:4
+            plot(axE, [0 1.05]*cos(cardThE(ci)), [0 1.05]*sin(cardThE(ci)), '-', ...
+                'Color',[0.8 0.8 0.8], 'LineWidth',0.5);
+            text(axE, 1.18*cos(cardThE(ci)), 1.18*sin(cardThE(ci)), cardLblE{ci}, ...
+                'HorizontalAlignment','center','FontSize',6,'Color',[0.4 0.4 0.4]);
+        end
+        for ovI = 1:nInd
+            if isnan(ovMu(ovI)) || isnan(ovR(ovI)), continue; end
+            muRad = deg2rad(ovMu(ovI));
+            % Axial: a direction and its 180°-flip are statistically the same
+            % axis, so both are plotted (matching makeFigure's polar scatter).
+            xA = ovR(ovI) * cos(muRad);  yA = ovR(ovI) * sin(muRad);
+            scatter(axE, [xA -xA], [yA -yA], 26, cmapInd(ovI,:), 'filled', 'MarkerFaceAlpha',0.85);
+        end
+        axE.XLim = [-1.3 1.3]; axE.YLim = [-1.3 1.3];
 
         drawnow;
     end
