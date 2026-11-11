@@ -6,8 +6,10 @@ import SingleTrackView from "./components/SingleTrackView";
 
 import i1Csv from "./fixtures/260814_GX010049_i1_tracks.csv?raw";
 import dsCsv from "./fixtures/260826_GX010066_ds_tracks.csv?raw";
+import pvCsv from "./fixtures/260902_GX010069_pv_tracks.csv?raw";
 
 const FIXTURES: Record<string, string> = {
+  "260902_GX010069_pv_tracks.csv": pvCsv,
   "260814_GX010049_i1_tracks.csv": i1Csv,
   "260826_GX010066_ds_tracks.csv": dsCsv,
 };
