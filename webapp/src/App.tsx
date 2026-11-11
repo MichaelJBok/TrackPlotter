@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { parseTracksCsv } from "./lib/parseCsv";
 import { DEFAULT_SETTINGS, type Settings } from "./lib/types";
 import OverviewView from "./components/OverviewView";
@@ -20,10 +20,16 @@ const OVERVIEW = "__overview__";
 
 export default function App() {
   const [fileName, setFileName] = useState(Object.keys(FIXTURES)[0]);
+  const [customFile, setCustomFile] = useState<{ name: string; csv: string } | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [selection, setSelection] = useState<string>(OVERVIEW);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
 
-  const data = useMemo(() => parseTracksCsv(FIXTURES[fileName]), [fileName]);
+  const data = useMemo(
+    () => parseTracksCsv(customFile ? customFile.csv : FIXTURES[fileName]),
+    [fileName, customFile],
+  );
   const hasOverview = data.trackLabels.length > 0; // always show it, single- or multi-individual
 
   function handleFileChange(name: string) {
@@ -31,20 +37,66 @@ export default function App() {
     setSelection(OVERVIEW); // always land on Overview for a newly selected file
   }
 
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same filename later
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = parseTracksCsv(text);
+      if (parsed.trackLabels.length === 0) {
+        setFileError(`"${file.name}" doesn't look like a tracks CSV (no Label_X/Label_Y columns found).`);
+        return;
+      }
+      setFileError(null);
+      setCustomFile({ name: file.name, csv: text });
+      setSelection(OVERVIEW);
+    } catch (err) {
+      setFileError(`Couldn't read "${file.name}": ${(err as Error).message}`);
+    }
+  }
+
   return (
     <div style={{ padding: 16, maxWidth: 1400, margin: "0 auto" }}>
-      <header style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16 }}>
+      <header style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
         <h1 style={{ fontSize: 18, margin: 0, color: "#1f3a63" }}>TrackPlotter (web prototype)</h1>
-        <label>
-          File:{" "}
-          <select value={fileName} onChange={(e) => handleFileChange(e.target.value)}>
-            {Object.keys(FIXTURES).map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
-        </label>
+        {customFile ? (
+          <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            File: <strong>{customFile.name}</strong>
+            <button
+              type="button"
+              style={{ fontSize: 12 }}
+              onClick={() => {
+                setCustomFile(null);
+                setFileError(null);
+                setSelection(OVERVIEW);
+              }}
+            >
+              Use sample data
+            </button>
+          </span>
+        ) : (
+          <label>
+            Sample:{" "}
+            <select value={fileName} onChange={(e) => handleFileChange(e.target.value)}>
+              {Object.keys(FIXTURES).map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <input
+          type="file"
+          accept=".csv"
+          ref={fileInputRef}
+          onChange={handleFileUpload}
+          style={{ display: "none" }}
+        />
+        <button type="button" style={{ fontSize: 12 }} onClick={() => fileInputRef.current?.click()}>
+          Load tracks.csv from disk…
+        </button>
         <label>
           Animal:{" "}
           <select value={selection} onChange={(e) => setSelection(e.target.value)}>
@@ -58,6 +110,9 @@ export default function App() {
         </label>
         <SettingsBar settings={settings} onChange={setSettings} />
       </header>
+      {fileError && (
+        <div style={{ color: "#c0392b", fontSize: 12, marginTop: -8, marginBottom: 12 }}>{fileError}</div>
+      )}
 
       {selection === OVERVIEW ? (
         <OverviewView data={data} settings={settings} onJumpToTrack={setSelection} />
