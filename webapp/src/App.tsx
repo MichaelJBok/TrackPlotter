@@ -262,7 +262,7 @@ export default function App() {
                 items={data.trackLabels}
                 value={selection}
                 onSelect={setSelection}
-                placeholder="Search tracks…"
+                showSearch={false}
               />
             </>
           )}

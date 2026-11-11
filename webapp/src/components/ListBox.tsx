@@ -4,17 +4,19 @@ interface Props {
   items: string[];
   value: string | null;
   onSelect: (value: string) => void;
-  placeholder: string;
+  placeholder?: string;
   emptyMessage?: string;
   rows?: number;
+  showSearch?: boolean;
 }
 
 const ROW_HEIGHT = 19;
 
-/** A searchable, alphabetically sorted list box showing `rows` items at once
- * (scrolling for the rest), in place of a native <select> dropdown. */
+/** An alphabetically sorted list box showing `rows` items at once (scrolling
+ * for the rest), in place of a native <select> dropdown. Optionally has a
+ * text filter above it (showSearch, on by default). */
 export default function ListBox({
-  items, value, onSelect, placeholder, emptyMessage = "No items", rows = 10,
+  items, value, onSelect, placeholder, emptyMessage = "No items", rows = 10, showSearch = true,
 }: Props) {
   const [filter, setFilter] = useState("");
 
@@ -26,14 +28,16 @@ export default function ListBox({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <input
-        type="text"
-        value={filter}
-        onChange={(e) => setFilter(e.target.value)}
-        placeholder={placeholder}
-        disabled={items.length === 0}
-        style={{ fontSize: 12, padding: "3px 6px", boxSizing: "border-box" }}
-      />
+      {showSearch && (
+        <input
+          type="text"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder={placeholder}
+          disabled={items.length === 0}
+          style={{ fontSize: 12, padding: "3px 6px", boxSizing: "border-box" }}
+        />
+      )}
       <div
         style={{
           border: "1px solid #ccc",
