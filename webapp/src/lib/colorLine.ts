@@ -5,34 +5,55 @@
 // into short multi-point chunks, each its own trace colored by the mean
 // value of its points, with endpoints shared between neighboring chunks so
 // there's no visible gap.
-const VIRIDIS_STOPS: Array<[number, [number, number, number]]> = [
-  [0.0, [68, 1, 84]],
-  [0.13, [71, 44, 122]],
-  [0.25, [59, 81, 139]],
-  [0.38, [44, 113, 142]],
-  [0.5, [33, 144, 141]],
-  [0.63, [39, 173, 129]],
-  [0.75, [92, 200, 99]],
-  [0.88, [170, 220, 50]],
-  [1.0, [253, 231, 37]],
+
+// Parula (MATLAB's default colormap, and what the MATLAB TrackPlotter app
+// uses) - chosen over Viridis because Viridis spends a wide, nearly flat
+// green/teal band through its middle range that reads as "all the same
+// color" at a glance, only becoming visually distinct again near its dark
+// purple and yellow ends. Parula's hue keeps shifting (blue -> teal -> green
+// -> yellow) across the whole range, so the middle stays as distinguishable
+// as the extremes. Stops sampled from the standard 64-entry Parula table.
+const PARULA_STOPS: Array<[number, [number, number, number]]> = [
+  [0.0, [53, 42, 135]],
+  [0.1111, [15, 92, 221]],
+  [0.2222, [18, 125, 216]],
+  [0.3333, [7, 156, 207]],
+  [0.4444, [21, 177, 180]],
+  [0.5556, [89, 189, 140]],
+  [0.6667, [165, 190, 107]],
+  [0.7778, [217, 186, 86]],
+  [0.8889, [247, 216, 38]],
+  [1.0, [249, 251, 14]],
 ];
 
-export function viridisColor(t: number): string {
+function interpStops(stops: Array<[number, [number, number, number]]>, t: number): [number, number, number] {
   const tt = Math.min(1, Math.max(0, Number.isFinite(t) ? t : 0));
-  for (let i = 0; i < VIRIDIS_STOPS.length - 1; i++) {
-    const [t0, c0] = VIRIDIS_STOPS[i];
-    const [t1, c1] = VIRIDIS_STOPS[i + 1];
+  for (let i = 0; i < stops.length - 1; i++) {
+    const [t0, c0] = stops[i];
+    const [t1, c1] = stops[i + 1];
     if (tt >= t0 && tt <= t1) {
       const f = (tt - t0) / (t1 - t0);
-      const r = Math.round(c0[0] + f * (c1[0] - c0[0]));
-      const g = Math.round(c0[1] + f * (c1[1] - c0[1]));
-      const b = Math.round(c0[2] + f * (c1[2] - c0[2]));
-      return `rgb(${r},${g},${b})`;
+      return [
+        Math.round(c0[0] + f * (c1[0] - c0[0])),
+        Math.round(c0[1] + f * (c1[1] - c0[1])),
+        Math.round(c0[2] + f * (c1[2] - c0[2])),
+      ];
     }
   }
-  const last = VIRIDIS_STOPS[VIRIDIS_STOPS.length - 1][1];
-  return `rgb(${last[0]},${last[1]},${last[2]})`;
+  return stops[stops.length - 1][1];
 }
+
+export function parulaColor(t: number): string {
+  const [r, g, b] = interpStops(PARULA_STOPS, t);
+  return `rgb(${r},${g},${b})`;
+}
+
+/** Custom colorscale for Plotly's `colorscale` prop (Plotly has no built-in
+ * "Parula" name, unlike "Viridis"), built from the same stops as parulaColor
+ * so markers and the gradient line always agree. */
+export const PARULA_COLORSCALE: Array<[number, string]> = PARULA_STOPS.map(
+  ([pos, [r, g, b]]) => [pos, `rgb(${r},${g},${b})`],
+);
 
 export interface LineChunk {
   x: number[];
@@ -62,7 +83,7 @@ export function coloredLineChunks(
   const flush = () => {
     if (curX.length >= 2) {
       const meanC = curC.reduce((a, b) => a + b, 0) / curC.length;
-      chunks.push({ x: curX.slice(), y: curY.slice(), color: viridisColor((meanC - lo) / span) });
+      chunks.push({ x: curX.slice(), y: curY.slice(), color: parulaColor((meanC - lo) / span) });
     }
     curX = [];
     curY = [];

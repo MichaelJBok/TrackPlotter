@@ -9,7 +9,7 @@ import {
   axialMeanR,
   percentile,
 } from "../lib/analysis";
-import { coloredLineChunks } from "../lib/colorLine";
+import { coloredLineChunks, PARULA_COLORSCALE } from "../lib/colorLine";
 import { basePlotConfig, baseLayout, gridColor } from "../lib/plotDefaults";
 
 interface Props {
@@ -186,7 +186,7 @@ function TrackPanel({
           y,
           type: "scattergl",
           mode: "markers",
-          marker: { size: 5, color: colorSrc, colorscale: "Viridis" },
+          marker: { size: 5, color: colorSrc, colorscale: PARULA_COLORSCALE },
           hoverinfo: "none", // "skip" (unlike "none") also suppresses click events
         },
         ...(hasHighlight
@@ -275,7 +275,7 @@ function DirectionPanel({
           y: dirDeg,
           type: "scattergl",
           mode: "markers",
-          marker: { size: 4, color: colorVals, colorscale: "Viridis", opacity: 0.5 },
+          marker: { size: 4, color: colorVals, colorscale: PARULA_COLORSCALE, opacity: 0.5 },
           name: "Direction",
           hoverinfo: "none", // "skip" (unlike "none") also suppresses click events
         },
@@ -456,7 +456,7 @@ function SpeedVsDirectionPanel({
     <Plot
       data={[
         { x: faded.x, y: faded.y, type: "scattergl", mode: "markers", marker: { size: 5, color: "#aaa", opacity: 0.25 }, hoverinfo: "skip" },
-        { x: main.x, y: main.y, type: "scattergl", mode: "markers", marker: { size: 5, color: main.c, colorscale: "Viridis", opacity: 0.7 }, hoverinfo: "skip" },
+        { x: main.x, y: main.y, type: "scattergl", mode: "markers", marker: { size: 5, color: main.c, colorscale: PARULA_COLORSCALE, opacity: 0.7 }, hoverinfo: "skip" },
       ]}
       layout={baseLayout("Speed vs Direction", {
         xaxis: { title: { text: "Direction (°)" }, range: [-180, 180], tickvals: [-180, -90, 0, 90, 180], gridcolor: gridColor },
