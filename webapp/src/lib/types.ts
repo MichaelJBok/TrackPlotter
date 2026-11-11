@@ -39,6 +39,14 @@ export const DEFAULT_SETTINGS: Settings = {
   lockHistAxis: false,
 };
 
+/** A loaded video-frame background for the Overview XY plot, in the same
+ * pixel coordinate system as the tracks (origin top-left). */
+export interface BackgroundImage {
+  url: string;
+  width: number;
+  height: number;
+}
+
 export interface TrackStats {
   label: string;
   nValid: number;

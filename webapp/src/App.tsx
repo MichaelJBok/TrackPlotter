@@ -1,8 +1,15 @@
 import { useMemo, useRef, useState } from "react";
 import { parseTracksCsv } from "./lib/parseCsv";
-import { DEFAULT_SETTINGS, type Settings } from "./lib/types";
+import { backgroundImageTag, loadBackgroundImage } from "./lib/backgroundImage";
+import { DEFAULT_SETTINGS, type BackgroundImage, type Settings } from "./lib/types";
 import OverviewView from "./components/OverviewView";
 import SingleTrackView from "./components/SingleTrackView";
+
+/** The tag a tracks CSV's filename shares with its matching "<tag>_bg.*"
+ * background image (see backgroundImage.ts). */
+function experimentTag(csvFilename: string): string {
+  return csvFilename.replace(/_tracks\.csv$/i, "").replace(/\.csv$/i, "");
+}
 
 import i1Csv from "./fixtures/260814_GX010049_i1_tracks.csv?raw";
 import dsCsv from "./fixtures/260826_GX010066_ds_tracks.csv?raw";
@@ -25,6 +32,12 @@ export default function App() {
   const [activeFile, setActiveFile] = useState<string>(Object.keys(FIXTURES)[0]);
   const [fileErrors, setFileErrors] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Background images are matched to an experiment by tag (see experimentTag)
+  // and kept separate from the CSVs themselves - loading one never merges
+  // anything, it just gives that experiment's Overview plot a backdrop.
+  const [backgroundImages, setBackgroundImages] = useState<Record<string, BackgroundImage>>({});
+  const [bgErrors, setBgErrors] = useState<string[]>([]);
+  const bgInputRef = useRef<HTMLInputElement>(null);
   const [selection, setSelection] = useState<string>(OVERVIEW);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
 
@@ -34,6 +47,7 @@ export default function App() {
   );
   const hasOverview = data.trackLabels.length > 0; // always show it, single- or multi-individual
   const uploadedNames = Object.keys(uploadedFiles);
+  const bgImage = backgroundImages[experimentTag(activeFile)];
 
   function handleFileChange(name: string) {
     setActiveFile(name);
@@ -75,6 +89,38 @@ export default function App() {
     setFileErrors([]);
     setActiveFile(Object.keys(FIXTURES)[0]);
     setSelection(OVERVIEW);
+    handleClearBackgrounds();
+  }
+
+  async function handleBackgroundUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (files.length === 0) return;
+
+    const errors: string[] = [];
+    const newEntries: Record<string, BackgroundImage> = {};
+    for (const file of files) {
+      const tag = backgroundImageTag(file.name);
+      if (!tag) {
+        errors.push(`"${file.name}" doesn't look like a "<experiment>_bg.jpg/png" background image.`);
+        continue;
+      }
+      try {
+        newEntries[tag] = await loadBackgroundImage(file);
+      } catch (err) {
+        errors.push(`Couldn't read "${file.name}": ${(err as Error).message}`);
+      }
+    }
+    setBgErrors(errors);
+    if (Object.keys(newEntries).length > 0) {
+      setBackgroundImages((prev) => ({ ...prev, ...newEntries }));
+    }
+  }
+
+  function handleClearBackgrounds() {
+    Object.values(backgroundImages).forEach((img) => URL.revokeObjectURL(img.url));
+    setBackgroundImages({});
+    setBgErrors([]);
   }
 
   return (
@@ -118,6 +164,22 @@ export default function App() {
             Clear loaded files
           </button>
         )}
+        <input
+          type="file"
+          accept="image/jpeg,image/png"
+          multiple
+          ref={bgInputRef}
+          onChange={handleBackgroundUpload}
+          style={{ display: "none" }}
+        />
+        <button type="button" style={{ fontSize: 12 }} onClick={() => bgInputRef.current?.click()}>
+          Load background image(s)…
+        </button>
+        {Object.keys(backgroundImages).length > 0 && (
+          <button type="button" style={{ fontSize: 12 }} onClick={handleClearBackgrounds}>
+            Clear backgrounds
+          </button>
+        )}
         <label>
           Animal:{" "}
           <select value={selection} onChange={(e) => setSelection(e.target.value)}>
@@ -131,16 +193,16 @@ export default function App() {
         </label>
         <SettingsBar settings={settings} onChange={setSettings} />
       </header>
-      {fileErrors.length > 0 && (
+      {(fileErrors.length > 0 || bgErrors.length > 0) && (
         <div style={{ color: "#c0392b", fontSize: 12, marginTop: -8, marginBottom: 12 }}>
-          {fileErrors.map((msg, i) => (
+          {[...fileErrors, ...bgErrors].map((msg, i) => (
             <div key={i}>{msg}</div>
           ))}
         </div>
       )}
 
       {selection === OVERVIEW ? (
-        <OverviewView data={data} settings={settings} onJumpToTrack={setSelection} />
+        <OverviewView data={data} settings={settings} onJumpToTrack={setSelection} bgImage={bgImage} />
       ) : (
         <SingleTrackView data={data} label={selection} settings={settings} />
       )}

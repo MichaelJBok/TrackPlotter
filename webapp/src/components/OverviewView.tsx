@@ -1,5 +1,5 @@
 import Plot from "react-plotly.js";
-import type { TracksData, Settings, TrackStats } from "../lib/types";
+import type { BackgroundImage, TracksData, Settings, TrackStats } from "../lib/types";
 import { applyFilters, computeTrackStats } from "../lib/analysis";
 import { colorForIndex } from "../lib/palette";
 import { basePlotConfig, baseLayout, gridColor } from "../lib/plotDefaults";
@@ -9,12 +9,13 @@ interface Props {
   data: TracksData;
   settings: Settings;
   onJumpToTrack: (label: string) => void;
+  bgImage?: BackgroundImage;
 }
 
 /** Multi-individual overview: XY overlay (+ optional background image), per-
  * individual distance/speed bars, and a direction polar plot. Clicking any
  * track/bar/point jumps to that individual's single-track view. */
-export default function OverviewView({ data, settings, onJumpToTrack }: Props) {
+export default function OverviewView({ data, settings, onJumpToTrack, bgImage }: Props) {
   const stats: TrackStats[] = data.trackLabels.map((label) => {
     const raw = data.tracks[label];
     const { x, y } = applyFilters(raw.x, raw.y, data.roi, settings);
@@ -54,7 +55,7 @@ export default function OverviewView({ data, settings, onJumpToTrack }: Props) {
         }}
       >
         <div style={{ gridColumn: "1", gridRow: "1 / span 2" }}>
-          <XYOverlayPanel data={data} settings={settings} onClick={handlePlotlyClick} />
+          <XYOverlayPanel data={data} settings={settings} bgImage={bgImage} onClick={handlePlotlyClick} />
         </div>
         <div style={{ gridColumn: "2", gridRow: "1" }}>
           <DirectionPolarPanel stats={stats} onClick={handlePlotlyClick} />
@@ -69,8 +70,8 @@ export default function OverviewView({ data, settings, onJumpToTrack }: Props) {
 }
 
 function XYOverlayPanel({
-  data, settings, onClick,
-}: { data: TracksData; settings: Settings; onClick: (e: any) => void }) {
+  data, settings, bgImage, onClick,
+}: { data: TracksData; settings: Settings; bgImage?: BackgroundImage; onClick: (e: any) => void }) {
   const traces = data.trackLabels.map((label, i) => {
     const raw = data.tracks[label];
     const { x, y } = applyFilters(raw.x, raw.y, data.roi, settings);
@@ -101,6 +102,24 @@ function XYOverlayPanel({
       ]
     : [];
 
+  const images = bgImage
+    ? [
+        {
+          source: bgImage.url,
+          xref: "x" as const,
+          yref: "y" as const,
+          x: 0,
+          y: 0,
+          sizex: bgImage.width,
+          sizey: bgImage.height,
+          xanchor: "left" as const,
+          yanchor: "top" as const,
+          sizing: "stretch" as const,
+          layer: "below" as const,
+        },
+      ]
+    : [];
+
   return (
     <Plot
       data={traces}
@@ -108,6 +127,7 @@ function XYOverlayPanel({
         xaxis: { title: { text: "X (px)" }, gridcolor: gridColor },
         yaxis: { title: { text: "Y (px)" }, gridcolor: gridColor, autorange: "reversed", scaleanchor: "x" },
         shapes,
+        images,
         showlegend: true,
         legend: { font: { size: 9 } },
       })}
