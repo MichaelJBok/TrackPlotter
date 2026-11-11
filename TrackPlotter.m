@@ -293,6 +293,17 @@ function TrackPlotter()
     function onFileSelect(~,~),   loadFile();              end
     function onAnimalSelect(~,~), saveCurrentSettings(); drawPlot(); end
 
+    function onOverviewTrackClick(trackLabel)
+    % Clicking a track/bar/polar point in the Overview jumps straight to
+    % that individual's single-track view, as if picked from the dropdown.
+        S = getappdata(fig,'S');
+        idx = find(strcmp(S.popAnimal.String, trackLabel), 1);
+        if isempty(idx), return; end
+        S.popAnimal.Value = idx;
+        setappdata(fig,'S',S);
+        onAnimalSelect();
+    end
+
     function onSortChanged(~,~)
         S = getappdata(fig,'S');
         if isempty(S.files), return; end
@@ -1417,14 +1428,18 @@ function TrackPlotter()
             if ~any(valid), continue; end
             lh = plot(axA, px(valid)*pxScale, py(valid)*pxScale, '-', ...
                 'Color', cmapInd(ovI,:), 'LineWidth', 0.9);
-            scatter(axA, px(valid)*pxScale, py(valid)*pxScale, 7, cmapInd(ovI,:), ...
+            hsc = scatter(axA, px(valid)*pxScale, py(valid)*pxScale, 7, cmapInd(ovI,:), ...
                 'filled', 'MarkerFaceAlpha', 0.45);
             vidx = find(valid);
-            plot(axA, px(vidx(1))*pxScale, py(vidx(1))*pxScale, 'o', 'MarkerSize',6, ...
+            hStart = plot(axA, px(vidx(1))*pxScale, py(vidx(1))*pxScale, 'o', 'MarkerSize',6, ...
                 'MarkerEdgeColor','k','MarkerFaceColor',cmapInd(ovI,:),'LineWidth',1.0);
-            plot(axA, px(vidx(end))*pxScale, py(vidx(end))*pxScale, 'x', 'MarkerSize',8, ...
+            hEnd = plot(axA, px(vidx(end))*pxScale, py(vidx(end))*pxScale, 'x', 'MarkerSize',8, ...
                 'MarkerEdgeColor',cmapInd(ovI,:),'LineWidth',1.5);
             legH(ovI) = lh;
+            % Clicking the track (line, dots, or start/end markers) jumps to
+            % that individual's single-track view.
+            clickCB = @(~,~) onOverviewTrackClick(ovNames{ovI});
+            set([lh, hsc, hStart, hEnd], 'ButtonDownFcn', clickCB);
         end
         if roiD > 0
             r1  = roiD * pxScale / 2;
@@ -1453,7 +1468,8 @@ function TrackPlotter()
         title(axC, 'Distance', 'FontSize',8);
         for ovI = 1:nInd
             v = ovDist(ovI);  if isnan(v), v = 0; end
-            bar(axC, ovI, v, 'FaceColor', cmapInd(ovI,:), 'EdgeColor','none');
+            hbarC = bar(axC, ovI, v, 'FaceColor', cmapInd(ovI,:), 'EdgeColor','none');
+            hbarC.ButtonDownFcn = @(~,~) onOverviewTrackClick(ovLabel{ovI});
         end
         axC.XLim = [0.3 nInd+0.7];
         axC.XTick = 1:nInd; axC.XTickLabel = strrep(ovLabel,'_',' ');
@@ -1468,7 +1484,8 @@ function TrackPlotter()
         title(axD, 'Speed', 'FontSize',8);
         for ovI = 1:nInd
             v = ovMeanSpd(ovI);  if isnan(v), v = 0; end
-            bar(axD, ovI, v, 'FaceColor', cmapInd(ovI,:), 'EdgeColor','none');
+            hbarD = bar(axD, ovI, v, 'FaceColor', cmapInd(ovI,:), 'EdgeColor','none');
+            hbarD.ButtonDownFcn = @(~,~) onOverviewTrackClick(ovLabel{ovI});
         end
         axD.XLim = [0.3 nInd+0.7];
         axD.XTick = 1:nInd; axD.XTickLabel = strrep(ovLabel,'_',' ');
@@ -1507,8 +1524,10 @@ function TrackPlotter()
             % joined by a line through the origin so each individual's axis
             % reads as a single line rather than two unrelated dots.
             xA = ovR(ovI) * cos(muRad);  yA = ovR(ovI) * sin(muRad);
-            plot(axE, [xA -xA], [yA -yA], '-', 'Color', cmapInd(ovI,:), 'LineWidth', 1.2);
-            scatter(axE, [xA -xA], [yA -yA], 26, cmapInd(ovI,:), 'filled', 'MarkerFaceAlpha',0.85);
+            hlnE = plot(axE, [xA -xA], [yA -yA], '-', 'Color', cmapInd(ovI,:), 'LineWidth', 1.2);
+            hscE = scatter(axE, [xA -xA], [yA -yA], 26, cmapInd(ovI,:), 'filled', 'MarkerFaceAlpha',0.85);
+            clickCB = @(~,~) onOverviewTrackClick(ovLabel{ovI});
+            set([hlnE, hscE], 'ButtonDownFcn', clickCB);
         end
         axE.XLim = [-1.3 1.3]; axE.YLim = [-1.3 1.3];
 
