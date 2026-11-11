@@ -36,6 +36,11 @@ function TrackPlotter()
     fig = figure('Name','Track Plotter','NumberTitle','off','Color','w', ...
         'Units','pixels','Position',[50 60 1420 900], ...
         'MenuBar','none','ToolBar','none','Resize','on');
+    % Set SizeChangedFcn only after fig is assigned — passing it as a
+    % constructor argument lets the callback fire (figure realization can
+    % trigger a size-changed event immediately) before this function's own
+    % `fig` variable is bound, which throws "Unrecognized variable 'fig'".
+    fig.SizeChangedFcn = @onFigureResize;
 
     %% ── Left control panel ──────────────────────────────────────────────────
     LP = uipanel(fig,'Units','pixels','Position',[5 5 268 890],...
@@ -418,6 +423,21 @@ function TrackPlotter()
         S = getappdata(fig,'S');
         S.lblStatus.String = sprintf('Settings copied to all %d files (pol. angle kept per-file).', numel(S.files));
         setappdata(fig,'S',S);
+    end
+
+    function onFigureResize(~,~)
+    % The left control panel (LP) keeps its original fixed size — its
+    % children are laid out in absolute pixels and don't need to change —
+    % but is re-pinned to the top-left corner so it doesn't drift to the
+    % middle of a taller/shorter window. The plot panel stretches to fill
+    % whatever space remains; its axes use normalized Position vectors
+    % (renderInto/renderOverview), so they rescale automatically with it.
+        figH = fig.Position(4);  figW = fig.Position(3);
+        LP.Position = [5, max(0, figH - 895), 268, 890];
+        S = getappdata(fig,'S');
+        if isfield(S,'plotPanel') && isgraphics(S.plotPanel)
+            S.plotPanel.Position = [280, 5, max(200, figW - 290), max(200, figH - 10)];
+        end
     end
 
     %% ══════════════════════════════════════════════════════════════════════════
