@@ -70,7 +70,7 @@ export default function App() {
 
 function SettingsBar({ settings, onChange }: { settings: Settings; onChange: (s: Settings) => void }) {
   return (
-    <div style={{ display: "flex", gap: 10, fontSize: 12, marginLeft: "auto", alignItems: "center" }}>
+    <div style={{ display: "flex", gap: 10, fontSize: 12, marginLeft: "auto", alignItems: "center", flexWrap: "wrap" }}>
       <label>
         FPS{" "}
         <input
@@ -78,6 +78,16 @@ function SettingsBar({ settings, onChange }: { settings: Settings; onChange: (s:
           value={settings.fps}
           style={{ width: 50 }}
           onChange={(e) => onChange({ ...settings, fps: Number(e.target.value) || 1 })}
+        />
+      </label>
+      <label>
+        Px scale{" "}
+        <input
+          type="number"
+          step="0.01"
+          value={settings.pxScale}
+          style={{ width: 55 }}
+          onChange={(e) => onChange({ ...settings, pxScale: Number(e.target.value) || 1 })}
         />
       </label>
       <label>
@@ -96,6 +106,38 @@ function SettingsBar({ settings, onChange }: { settings: Settings; onChange: (s:
           value={settings.roiFilterPct}
           style={{ width: 50 }}
           onChange={(e) => onChange({ ...settings, roiFilterPct: Number(e.target.value) || 0 })}
+        />
+      </label>
+      <label>
+        Pol angle{" "}
+        <input
+          type="number"
+          value={settings.polAngle}
+          style={{ width: 50 }}
+          onChange={(e) => onChange({ ...settings, polAngle: Number(e.target.value) || 0 })}
+        />
+      </label>
+      <label>
+        <input
+          type="checkbox"
+          checked={settings.showPolLine}
+          onChange={(e) => onChange({ ...settings, showPolLine: e.target.checked })}
+        />{" "}
+        Show pol line
+      </label>
+      <label>
+        <input
+          type="checkbox"
+          checked={settings.timeCutSec != null}
+          onChange={(e) => onChange({ ...settings, timeCutSec: e.target.checked ? 0 : null })}
+        />{" "}
+        Time cut (s){" "}
+        <input
+          type="number"
+          disabled={settings.timeCutSec == null}
+          value={settings.timeCutSec ?? 0}
+          style={{ width: 50 }}
+          onChange={(e) => onChange({ ...settings, timeCutSec: Number(e.target.value) || 0 })}
         />
       </label>
       <label>

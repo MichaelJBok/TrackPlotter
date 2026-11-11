@@ -11,6 +11,7 @@ export interface Settings {
   pxScale: number; // cm per px; 1 = stay in px
   minSpeed: number;
   polAngle: number; // degrees
+  showPolLine: boolean;
   timeCutSec: number | null; // null = off
   roiFilterPct: number; // 0 = off
   colorMode: "time" | "speed";
@@ -21,6 +22,7 @@ export const DEFAULT_SETTINGS: Settings = {
   pxScale: 1,
   minSpeed: 0,
   polAngle: 0,
+  showPolLine: false,
   timeCutSec: null,
   roiFilterPct: 0,
   colorMode: "time",

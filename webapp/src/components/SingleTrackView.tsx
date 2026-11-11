@@ -55,11 +55,11 @@ export default function SingleTrackView({ data, label, settings }: Props) {
           gap: 8,
         }}
       >
-        <DirectionPanel frame={frame} dirDeg={dirDeg} fps={settings.fps} colorVals={colorVals} xRange={frameRange} />
-        <SpeedPanel frame={frame} speedRaw={speedRaw} speedSmooth={speedSmooth} xRange={frameRange} />
+        <DirectionPanel frame={frame} dirDeg={dirDeg} fps={settings.fps} colorVals={colorVals} xRange={frameRange} timeCutSec={settings.timeCutSec} />
+        <SpeedPanel frame={frame} speedRaw={speedRaw} speedSmooth={speedSmooth} xRange={frameRange} fps={settings.fps} timeCutSec={settings.timeCutSec} />
       </div>
       <div style={{ gridColumn: "1", gridRow: "2" }}>
-        <DirectionRosePanel dirDeg={dirDeg} polAngle={settings.polAngle} />
+        <DirectionRosePanel dirDeg={dirDeg} polAngle={settings.polAngle} showPolLine={settings.showPolLine} />
       </div>
       <div style={{ gridColumn: "2", gridRow: "2" }}>
         <SpeedVsDirectionPanel dirDeg={dirDeg} speed={speedRaw} minSpeed={settings.minSpeed} colorVals={colorVals} />
@@ -123,9 +123,30 @@ function TrackPanel({
   );
 }
 
+/** A vertical dashed line marking the time-cutoff frame, shared by the
+ * Direction and Speed panels (mirrors the MATLAB app's xline). */
+function timeCutShape(fps: number, timeCutSec: number | null) {
+  if (timeCutSec == null || !Number.isFinite(timeCutSec)) return [];
+  const cutFrame = timeCutSec * fps;
+  return [
+    {
+      type: "line" as const,
+      x0: cutFrame,
+      x1: cutFrame,
+      y0: 0,
+      y1: 1,
+      yref: "paper" as const,
+      line: { color: "#cc2626", width: 1.5, dash: "dash" as const },
+    },
+  ];
+}
+
 function DirectionPanel({
-  frame, dirDeg, fps, colorVals, xRange,
-}: { frame: number[]; dirDeg: number[]; fps: number; colorVals: number[]; xRange: [number, number] }) {
+  frame, dirDeg, fps, colorVals, xRange, timeCutSec,
+}: {
+  frame: number[]; dirDeg: number[]; fps: number; colorVals: number[];
+  xRange: [number, number]; timeCutSec: number | null;
+}) {
   const dirSmooth = circularMovingAverage(dirDeg, 5);
   const durationSec = frame.length ? frame[frame.length - 1] / fps : 0;
   const lineChunks = coloredLineChunks(frame, dirSmooth, colorVals, 8, 180);
@@ -171,6 +192,7 @@ function DirectionPanel({
           range: [-180, 180],
           tickvals: [-180, -90, 0, 90, 180],
         },
+        shapes: timeCutShape(fps, timeCutSec),
         margin: { l: 50, r: 20, t: 40, b: 10 },
       })}
       config={basePlotConfig}
@@ -181,8 +203,11 @@ function DirectionPanel({
 }
 
 function SpeedPanel({
-  frame, speedRaw, speedSmooth, xRange,
-}: { frame: number[]; speedRaw: number[]; speedSmooth: number[]; xRange: [number, number] }) {
+  frame, speedRaw, speedSmooth, xRange, fps, timeCutSec,
+}: {
+  frame: number[]; speedRaw: number[]; speedSmooth: number[];
+  xRange: [number, number]; fps: number; timeCutSec: number | null;
+}) {
   return (
     <Plot
       data={[
@@ -213,6 +238,7 @@ function SpeedPanel({
           range: xRange,
         },
         yaxis: { title: { text: "Speed (px/s)" }, gridcolor: gridColor },
+        shapes: timeCutShape(fps, timeCutSec),
         margin: { l: 50, r: 20, t: 24, b: 36 },
       })}
       config={basePlotConfig}
@@ -223,8 +249,8 @@ function SpeedPanel({
 }
 
 function DirectionRosePanel({
-  dirDeg, polAngle,
-}: { dirDeg: number[]; polAngle: number }) {
+  dirDeg, polAngle, showPolLine,
+}: { dirDeg: number[]; polAngle: number; showPolLine: boolean }) {
   const nBins = 24;
   const counts = new Array(nBins).fill(0);
   for (const d of dirDeg) {
@@ -234,6 +260,7 @@ function DirectionRosePanel({
   const total = dirDeg.length || 1;
   const theta = Array.from({ length: nBins }, (_, i) => -180 + (360 / nBins) * (i + 0.5));
   const r = counts.map((c) => c / total);
+  const maxR = Math.max(...r, 1e-6) * 1.15;
 
   return (
     <Plot
@@ -242,12 +269,24 @@ function DirectionRosePanel({
           type: "barpolar",
           r,
           theta,
-          marker: { color: "#2a78d6", opacity: 0.75 },
+          marker: { color: "#444", opacity: 0.85 },
         },
+        ...(showPolLine
+          ? [
+              {
+                type: "scatterpolar" as const,
+                mode: "lines" as const,
+                r: [maxR, 0, maxR],
+                theta: [polAngle, polAngle, polAngle + 180],
+                line: { color: "#111", width: 1.3 },
+                hoverinfo: "skip" as const,
+              },
+            ]
+          : []),
       ]}
       layout={baseLayout("Direction (360°)", {
         polar: {
-          radialaxis: { showticklabels: false, ticks: "", layer: "below traces" },
+          radialaxis: { showticklabels: false, ticks: "", layer: "below traces", range: [0, maxR] },
           angularaxis: {
             direction: "clockwise", // mirrors Y to match the video-orientation Track panel
             rotation: 0,
@@ -257,6 +296,7 @@ function DirectionRosePanel({
           },
           bgcolor: "white",
         },
+        showlegend: false,
         annotations: polAngle
           ? [{ text: `pol=${polAngle}°`, showarrow: false, x: 0.5, y: -0.08, xref: "paper", yref: "paper", font: { size: 9 } }]
           : [],
@@ -314,7 +354,7 @@ function DirectionAxialPanel({
   const subtitle = Number.isFinite(meanDeg) ? `mean ${meanDeg.toFixed(1)}° | R=${R.toFixed(3)}` : "";
   return (
     <Plot
-      data={[{ x: centers, y: counts, type: "bar", marker: { color: "#2a78d6", line: { color: "white", width: 1 } }, width: 10 }]}
+      data={[{ x: centers, y: counts, type: "bar", marker: { color: "#444", line: { color: "white", width: 1 } }, width: 10 }]}
       layout={baseLayout(`Direction (axial)${subtitle ? `<br><span style="font-size:9px">${subtitle}</span>` : ""}`, {
         xaxis: { title: { text: "Direction (°)" }, range: [0, 180], tickvals: [0, 45, 90, 135, 180], gridcolor: gridColor },
         yaxis: { title: { text: "Count" }, gridcolor: gridColor },
@@ -329,7 +369,7 @@ function DirectionAxialPanel({
 function SpeedHistogramPanel({ speed }: { speed: number[] }) {
   return (
     <Plot
-      data={[{ x: speed, type: "histogram", marker: { color: "#2a78d6", line: { color: "white", width: 1 } }, nbinsx: 20 }]}
+      data={[{ x: speed, type: "histogram", marker: { color: "#444", line: { color: "white", width: 1 } }, nbinsx: 20 }]}
       layout={baseLayout("Speed Distribution", {
         xaxis: { title: { text: "Speed (px/s)" }, gridcolor: gridColor },
         yaxis: { title: { text: "Count" }, gridcolor: gridColor },
