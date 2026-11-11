@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Plot from "react-plotly.js";
 import type { TracksData, Settings } from "../lib/types";
 import {
@@ -7,6 +7,7 @@ import {
   computePathStats,
   circularMovingAverage,
   axialMeanR,
+  percentile,
 } from "../lib/analysis";
 import { coloredLineChunks } from "../lib/colorLine";
 import { basePlotConfig, baseLayout, gridColor } from "../lib/plotDefaults";
@@ -15,6 +16,53 @@ interface Props {
   data: TracksData;
   label: string;
   settings: Settings;
+}
+
+const SPEED_HIST_BINS = 20;
+const DIR_HIST_BINS = 18; // 10deg bins over 0-180
+
+/** Scans every track in the file (not just the one being viewed) for the
+ * "lock axis" settings, so switching tracks doesn't rescale the axes.
+ * speedPctMax: `settings.speedPercentile`-th percentile of each track's raw
+ * speeds, maxed across tracks (mirrors the MATLAB app's folder scan).
+ * histMaxSpd/histMaxDir: tallest bin count across tracks, using bins sized
+ * off speedPctMax so every track is compared on the same edges. */
+function computeGlobalAxisStats(data: TracksData, settings: Settings) {
+  let speedPctMax = 0;
+  const perTrackSpeeds: number[][] = [];
+  const perTrackDirAbove: number[][] = [];
+  for (const label of data.trackLabels) {
+    const t = data.tracks[label];
+    const { x: tx, y: ty } = applyFilters(t.x, t.y, data.roi, settings);
+    const { speedRaw: sRaw, dirDeg: dDeg } = computeFrameSeries(tx, ty, settings.fps, settings.pxScale);
+    if (sRaw.length) speedPctMax = Math.max(speedPctMax, percentile(sRaw, settings.speedPercentile));
+    perTrackSpeeds.push(sRaw);
+    perTrackDirAbove.push(dDeg.filter((_, i) => sRaw[i] >= settings.minSpeed));
+  }
+
+  const speedHi = speedPctMax > 0 ? speedPctMax * 1.001 : 1;
+  const speedBinWidth = speedHi / SPEED_HIST_BINS || 1;
+  let histMaxSpd = 0;
+  for (const speeds of perTrackSpeeds) {
+    const counts = new Array(SPEED_HIST_BINS).fill(0);
+    for (const s of speeds) {
+      if (!Number.isFinite(s)) continue;
+      counts[Math.min(SPEED_HIST_BINS - 1, Math.floor(s / speedBinWidth))]++;
+    }
+    histMaxSpd = Math.max(histMaxSpd, ...counts);
+  }
+
+  let histMaxDir = 0;
+  for (const dirAbove of perTrackDirAbove) {
+    const counts = new Array(DIR_HIST_BINS).fill(0);
+    for (const d of dirAbove) {
+      const ax = (((d - settings.polAngle) % 180) + 180) % 180;
+      counts[Math.min(DIR_HIST_BINS - 1, Math.floor(ax / 10))]++;
+    }
+    histMaxDir = Math.max(histMaxDir, ...counts);
+  }
+
+  return { speedPctMax, histMaxSpd, histMaxDir };
 }
 
 /** Single-track analysis: 2 rows x 4 columns.
@@ -34,6 +82,21 @@ export default function SingleTrackView({ data, label, settings }: Props) {
   const frameRange: [number, number] = frame.length ? [frame[0], frame[frame.length - 1]] : [0, 1];
 
   const [selectedFrame, setSelectedFrame] = useState<number | null>(null);
+
+  const globalStats = useMemo(() => {
+    if (!settings.lockSpeedAxis && !settings.lockHistAxis) return null;
+    return computeGlobalAxisStats(data, settings);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    data, settings.lockSpeedAxis, settings.lockHistAxis, settings.speedPercentile,
+    settings.fps, settings.pxScale, settings.timeCutSec, settings.roiFilterPct,
+    settings.minSpeed, settings.polAngle,
+  ]);
+  const speedAxisMax = settings.lockSpeedAxis && globalStats && globalStats.speedPctMax > 0
+    ? globalStats.speedPctMax * 1.15
+    : null;
+  const histMaxSpd = settings.lockHistAxis && globalStats ? globalStats.histMaxSpd : null;
+  const histMaxDir = settings.lockHistAxis && globalStats ? globalStats.histMaxDir : null;
 
   return (
     <div
@@ -60,19 +123,19 @@ export default function SingleTrackView({ data, label, settings }: Props) {
         <DirectionPanel frame={frame} dirDeg={dirDeg} fps={settings.fps} colorVals={colorVals} xRange={frameRange} timeCutSec={settings.timeCutSec}
           selectedFrame={selectedFrame} onSelectFrame={setSelectedFrame} />
         <SpeedPanel frame={frame} speedRaw={speedRaw} speedSmooth={speedSmooth} xRange={frameRange} fps={settings.fps} timeCutSec={settings.timeCutSec}
-          selectedFrame={selectedFrame} onSelectFrame={setSelectedFrame} />
+          selectedFrame={selectedFrame} onSelectFrame={setSelectedFrame} speedAxisMax={speedAxisMax} />
       </div>
       <div style={{ gridColumn: "1", gridRow: "2" }}>
         <DirectionRosePanel dirDeg={dirDeg} polAngle={settings.polAngle} showPolLine={settings.showPolLine} />
       </div>
       <div style={{ gridColumn: "2", gridRow: "2" }}>
-        <SpeedVsDirectionPanel dirDeg={dirDeg} speed={speedRaw} minSpeed={settings.minSpeed} colorVals={colorVals} />
+        <SpeedVsDirectionPanel dirDeg={dirDeg} speed={speedRaw} minSpeed={settings.minSpeed} colorVals={colorVals} speedAxisMax={speedAxisMax} />
       </div>
       <div style={{ gridColumn: "3", gridRow: "2" }}>
-        <DirectionAxialPanel dirAbove={dirAbove} polAngle={settings.polAngle} meanDeg={meanDeg} R={R} />
+        <DirectionAxialPanel dirAbove={dirAbove} polAngle={settings.polAngle} meanDeg={meanDeg} R={R} histMaxDir={histMaxDir} />
       </div>
       <div style={{ gridColumn: "4", gridRow: "2" }}>
-        <SpeedHistogramPanel speed={speedRaw} minSpeed={settings.minSpeed} />
+        <SpeedHistogramPanel speed={speedRaw} minSpeed={settings.minSpeed} speedAxisMax={speedAxisMax} histMaxSpd={histMaxSpd} />
       </div>
     </div>
   );
@@ -257,11 +320,12 @@ function DirectionPanel({
 }
 
 function SpeedPanel({
-  frame, speedRaw, speedSmooth, xRange, fps, timeCutSec, selectedFrame, onSelectFrame,
+  frame, speedRaw, speedSmooth, xRange, fps, timeCutSec, selectedFrame, onSelectFrame, speedAxisMax,
 }: {
   frame: number[]; speedRaw: number[]; speedSmooth: number[];
   xRange: [number, number]; fps: number; timeCutSec: number | null;
   selectedFrame: number | null; onSelectFrame: (frame: number) => void;
+  speedAxisMax: number | null;
 }) {
   const handleClick = (e: Readonly<{ points: ReadonlyArray<{ x?: number }> }>) => {
     const f = e.points?.[0]?.x;
@@ -297,7 +361,11 @@ function SpeedPanel({
           domain: [0, 1],
           range: xRange,
         },
-        yaxis: { title: { text: "Speed (px/s)" }, gridcolor: gridColor },
+        yaxis: {
+          title: { text: "Speed (px/s)" },
+          gridcolor: gridColor,
+          range: speedAxisMax != null ? [0, speedAxisMax] : undefined,
+        },
         shapes: [...timeCutShape(fps, timeCutSec), ...selectionShape(selectedFrame)],
         margin: { l: 50, r: 20, t: 24, b: 36 },
       })}
@@ -370,8 +438,8 @@ function DirectionRosePanel({
 }
 
 function SpeedVsDirectionPanel({
-  dirDeg, speed, minSpeed, colorVals,
-}: { dirDeg: number[]; speed: number[]; minSpeed: number; colorVals: number[] }) {
+  dirDeg, speed, minSpeed, colorVals, speedAxisMax,
+}: { dirDeg: number[]; speed: number[]; minSpeed: number; colorVals: number[]; speedAxisMax: number | null }) {
   const faded = { x: [] as number[], y: [] as number[] };
   const main = { x: [] as number[], y: [] as number[], c: [] as number[] };
   dirDeg.forEach((d, i) => {
@@ -392,7 +460,11 @@ function SpeedVsDirectionPanel({
       ]}
       layout={baseLayout("Speed vs Direction", {
         xaxis: { title: { text: "Direction (°)" }, range: [-180, 180], tickvals: [-180, -90, 0, 90, 180], gridcolor: gridColor },
-        yaxis: { title: { text: "Speed (px/s)" }, gridcolor: gridColor },
+        yaxis: {
+          title: { text: "Speed (px/s)" },
+          gridcolor: gridColor,
+          range: speedAxisMax != null ? [0, speedAxisMax] : undefined,
+        },
       })}
       config={basePlotConfig}
       style={{ width: "100%", height: "100%" }}
@@ -402,8 +474,8 @@ function SpeedVsDirectionPanel({
 }
 
 function DirectionAxialPanel({
-  dirAbove, polAngle, meanDeg, R,
-}: { dirAbove: number[]; polAngle: number; meanDeg: number; R: number }) {
+  dirAbove, polAngle, meanDeg, R, histMaxDir,
+}: { dirAbove: number[]; polAngle: number; meanDeg: number; R: number; histMaxDir: number | null }) {
   const edges = Array.from({ length: 19 }, (_, i) => i * 10);
   const counts = new Array(18).fill(0);
   for (const d of dirAbove) {
@@ -418,7 +490,11 @@ function DirectionAxialPanel({
       data={[{ x: centers, y: counts, type: "bar", marker: { color: "#444", line: { color: "white", width: 1 } }, width: 10 }]}
       layout={baseLayout(`Direction (axial)${subtitle ? `<br><span style="font-size:9px">${subtitle}</span>` : ""}`, {
         xaxis: { title: { text: "Direction (°)" }, range: [0, 180], tickvals: [0, 45, 90, 135, 180], gridcolor: gridColor },
-        yaxis: { title: { text: "Count" }, gridcolor: gridColor },
+        yaxis: {
+          title: { text: "Count" },
+          gridcolor: gridColor,
+          range: histMaxDir != null ? [0, histMaxDir * 1.15] : undefined,
+        },
       })}
       config={basePlotConfig}
       style={{ width: "100%", height: "100%" }}
@@ -431,17 +507,19 @@ function DirectionAxialPanel({
  * never rescales as minSpeed changes — bins below the cutoff are greyed out
  * in place instead of being dropped, and a dashed line marks the cutoff
  * (mirrors the MATLAB app's xline). */
-function SpeedHistogramPanel({ speed, minSpeed }: { speed: number[]; minSpeed: number }) {
+function SpeedHistogramPanel({
+  speed, minSpeed, speedAxisMax, histMaxSpd,
+}: { speed: number[]; minSpeed: number; speedAxisMax: number | null; histMaxSpd: number | null }) {
   const valid = speed.filter((s) => Number.isFinite(s));
-  const hi = valid.length ? Math.max(...valid) * 1.001 : 1;
-  const nBins = 20;
-  const binWidth = hi / nBins || 1;
-  const counts = new Array(nBins).fill(0);
+  const localHi = valid.length ? Math.max(...valid) * 1.001 : 1;
+  const hi = speedAxisMax ?? localHi;
+  const binWidth = hi / SPEED_HIST_BINS || 1;
+  const counts = new Array(SPEED_HIST_BINS).fill(0);
   for (const s of valid) {
-    const idx = Math.min(nBins - 1, Math.floor(s / binWidth));
+    const idx = Math.min(SPEED_HIST_BINS - 1, Math.floor(s / binWidth));
     counts[idx]++;
   }
-  const centers = Array.from({ length: nBins }, (_, i) => (i + 0.5) * binWidth);
+  const centers = Array.from({ length: SPEED_HIST_BINS }, (_, i) => (i + 0.5) * binWidth);
   const colors = centers.map((c) => (c >= minSpeed ? "#444" : "#ccc"));
 
   return (
@@ -455,7 +533,11 @@ function SpeedHistogramPanel({ speed, minSpeed }: { speed: number[]; minSpeed: n
       }]}
       layout={baseLayout("Speed Distribution", {
         xaxis: { title: { text: "Speed (px/s)" }, gridcolor: gridColor, range: [0, hi] },
-        yaxis: { title: { text: "Count" }, gridcolor: gridColor },
+        yaxis: {
+          title: { text: "Count" },
+          gridcolor: gridColor,
+          range: histMaxSpd != null ? [0, histMaxSpd * 1.15] : undefined,
+        },
         shapes: minSpeed > 0
           ? [{
               type: "line" as const,

@@ -15,6 +15,14 @@ export interface Settings {
   timeCutSec: number | null; // null = off
   roiFilterPct: number; // 0 = off
   colorMode: "time" | "speed";
+  /** Locks the speed axis (Speed panel, Speed vs Direction, and Speed
+   * Distribution's x-range) to a percentile computed across every track in
+   * the file, instead of each track autoscaling its own axis. */
+  lockSpeedAxis: boolean;
+  speedPercentile: number; // 1-100, used by lockSpeedAxis
+  /** Locks the count (y) axis of Speed Distribution and Direction (axial)
+   * to the tallest bin across every track in the file. */
+  lockHistAxis: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -26,6 +34,9 @@ export const DEFAULT_SETTINGS: Settings = {
   timeCutSec: null,
   roiFilterPct: 0,
   colorMode: "time",
+  lockSpeedAxis: false,
+  speedPercentile: 95,
+  lockHistAxis: false,
 };
 
 export interface TrackStats {

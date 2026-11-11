@@ -141,6 +141,34 @@ function SettingsBar({ settings, onChange }: { settings: Settings; onChange: (s:
         />
       </label>
       <label>
+        <input
+          type="checkbox"
+          checked={settings.lockSpeedAxis}
+          onChange={(e) => onChange({ ...settings, lockSpeedAxis: e.target.checked })}
+        />{" "}
+        Lock speed axis
+      </label>
+      <label>
+        Speed pctile{" "}
+        <input
+          type="number"
+          min={1}
+          max={100}
+          disabled={!settings.lockSpeedAxis}
+          value={settings.speedPercentile}
+          style={{ width: 45 }}
+          onChange={(e) => onChange({ ...settings, speedPercentile: Number(e.target.value) || 95 })}
+        />
+      </label>
+      <label>
+        <input
+          type="checkbox"
+          checked={settings.lockHistAxis}
+          onChange={(e) => onChange({ ...settings, lockHistAxis: e.target.checked })}
+        />{" "}
+        Lock hist Y axis
+      </label>
+      <label>
         Color{" "}
         <select
           value={settings.colorMode}

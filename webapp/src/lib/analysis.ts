@@ -194,3 +194,16 @@ function median(values: number[]): number {
   const mid = Math.floor(s.length / 2);
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 }
+
+/** Linear-interpolation percentile (0-100), matching MATLAB's default
+ * `prctile` closely enough for axis-scaling purposes. */
+export function percentile(values: number[], pct: number): number {
+  const s = values.filter((v) => Number.isFinite(v)).sort((a, b) => a - b);
+  if (s.length === 0) return NaN;
+  if (s.length === 1) return s[0];
+  const rank = (pct / 100) * (s.length - 1);
+  const lo = Math.floor(rank);
+  const hi = Math.ceil(rank);
+  if (lo === hi) return s[lo];
+  return s[lo] + (s[hi] - s[lo]) * (rank - lo);
+}
