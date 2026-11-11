@@ -19,84 +19,105 @@ const FIXTURES: Record<string, string> = {
 const OVERVIEW = "__overview__";
 
 export default function App() {
-  const [fileName, setFileName] = useState(Object.keys(FIXTURES)[0]);
-  const [customFile, setCustomFile] = useState<{ name: string; csv: string } | null>(null);
-  const [fileError, setFileError] = useState<string | null>(null);
+  // Each uploaded file stays its own separate dataset (own tracks, own ROI) -
+  // loading several just adds more options to pick from, it never merges them.
+  const [uploadedFiles, setUploadedFiles] = useState<Record<string, string>>({});
+  const [activeFile, setActiveFile] = useState<string>(Object.keys(FIXTURES)[0]);
+  const [fileErrors, setFileErrors] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selection, setSelection] = useState<string>(OVERVIEW);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
 
   const data = useMemo(
-    () => parseTracksCsv(customFile ? customFile.csv : FIXTURES[fileName]),
-    [fileName, customFile],
+    () => parseTracksCsv(uploadedFiles[activeFile] ?? FIXTURES[activeFile]),
+    [activeFile, uploadedFiles],
   );
   const hasOverview = data.trackLabels.length > 0; // always show it, single- or multi-individual
+  const uploadedNames = Object.keys(uploadedFiles);
 
   function handleFileChange(name: string) {
-    setFileName(name);
+    setActiveFile(name);
     setSelection(OVERVIEW); // always land on Overview for a newly selected file
   }
 
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = ""; // allow re-selecting the same filename later
-    if (!file) return;
-    try {
-      const text = await file.text();
-      const parsed = parseTracksCsv(text);
-      if (parsed.trackLabels.length === 0) {
-        setFileError(`"${file.name}" doesn't look like a tracks CSV (no Label_X/Label_Y columns found).`);
-        return;
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = ""; // allow re-selecting the same filename(s) later
+    if (files.length === 0) return;
+
+    const errors: string[] = [];
+    const newEntries: Record<string, string> = {};
+    let firstGood: string | null = null;
+    for (const file of files) {
+      try {
+        const text = await file.text();
+        const parsed = parseTracksCsv(text);
+        if (parsed.trackLabels.length === 0) {
+          errors.push(`"${file.name}" doesn't look like a tracks CSV (no Label_X/Label_Y columns found).`);
+          continue;
+        }
+        newEntries[file.name] = text;
+        if (firstGood === null) firstGood = file.name;
+      } catch (err) {
+        errors.push(`Couldn't read "${file.name}": ${(err as Error).message}`);
       }
-      setFileError(null);
-      setCustomFile({ name: file.name, csv: text });
-      setSelection(OVERVIEW);
-    } catch (err) {
-      setFileError(`Couldn't read "${file.name}": ${(err as Error).message}`);
     }
+    setFileErrors(errors);
+    if (firstGood) {
+      setUploadedFiles((prev) => ({ ...prev, ...newEntries }));
+      setActiveFile(firstGood);
+      setSelection(OVERVIEW);
+    }
+  }
+
+  function handleClearUploads() {
+    setUploadedFiles({});
+    setFileErrors([]);
+    setActiveFile(Object.keys(FIXTURES)[0]);
+    setSelection(OVERVIEW);
   }
 
   return (
     <div style={{ padding: 16, maxWidth: 1400, margin: "0 auto" }}>
       <header style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
         <h1 style={{ fontSize: 18, margin: 0, color: "#1f3a63" }}>TrackPlotter (web prototype)</h1>
-        {customFile ? (
-          <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            File: <strong>{customFile.name}</strong>
-            <button
-              type="button"
-              style={{ fontSize: 12 }}
-              onClick={() => {
-                setCustomFile(null);
-                setFileError(null);
-                setSelection(OVERVIEW);
-              }}
-            >
-              Use sample data
-            </button>
-          </span>
-        ) : (
-          <label>
-            Sample:{" "}
-            <select value={fileName} onChange={(e) => handleFileChange(e.target.value)}>
+        <label>
+          Experiment:{" "}
+          <select value={activeFile} onChange={(e) => handleFileChange(e.target.value)}>
+            {uploadedNames.length > 0 && (
+              <optgroup label="Loaded files">
+                {uploadedNames.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            <optgroup label="Sample data">
               {Object.keys(FIXTURES).map((name) => (
                 <option key={name} value={name}>
                   {name}
                 </option>
               ))}
-            </select>
-          </label>
-        )}
+            </optgroup>
+          </select>
+        </label>
         <input
           type="file"
           accept=".csv"
+          multiple
           ref={fileInputRef}
           onChange={handleFileUpload}
           style={{ display: "none" }}
         />
         <button type="button" style={{ fontSize: 12 }} onClick={() => fileInputRef.current?.click()}>
-          Load tracks.csv from disk…
+          Load CSV(s) from disk…
         </button>
+        {uploadedNames.length > 0 && (
+          <button type="button" style={{ fontSize: 12 }} onClick={handleClearUploads}>
+            Clear loaded files
+          </button>
+        )}
         <label>
           Animal:{" "}
           <select value={selection} onChange={(e) => setSelection(e.target.value)}>
@@ -110,8 +131,12 @@ export default function App() {
         </label>
         <SettingsBar settings={settings} onChange={setSettings} />
       </header>
-      {fileError && (
-        <div style={{ color: "#c0392b", fontSize: 12, marginTop: -8, marginBottom: 12 }}>{fileError}</div>
+      {fileErrors.length > 0 && (
+        <div style={{ color: "#c0392b", fontSize: 12, marginTop: -8, marginBottom: 12 }}>
+          {fileErrors.map((msg, i) => (
+            <div key={i}>{msg}</div>
+          ))}
+        </div>
       )}
 
       {selection === OVERVIEW ? (
