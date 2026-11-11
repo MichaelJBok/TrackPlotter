@@ -11,6 +11,7 @@ import {
 } from "../lib/analysis";
 import { coloredLineChunks, PARULA_COLORSCALE } from "../lib/colorLine";
 import { basePlotConfig, baseLayout, gridColor } from "../lib/plotDefaults";
+import { downloadCsv } from "../lib/exportCsv";
 
 interface Props {
   data: TracksData;
@@ -98,46 +99,58 @@ export default function SingleTrackView({ data, label, settings }: Props) {
   const histMaxSpd = settings.lockHistAxis && globalStats ? globalStats.histMaxSpd : null;
   const histMaxDir = settings.lockHistAxis && globalStats ? globalStats.histMaxDir : null;
 
+  const handleExportData = () => {
+    const rows = frame.map((f, i) => [f, speedRaw[i], dirDeg[i]]);
+    downloadCsv(`${label}_speed_direction.csv`, ["Frame", "Speed_px_s", "Direction_deg"], rows);
+  };
+
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(4, 1fr)",
-        gridTemplateRows: "480px 300px",
-        gap: 10,
-      }}
-    >
-      <div style={{ gridColumn: "1", gridRow: "1" }}>
-        <TrackPanel x={x} y={y} roi={data.roi} colorVals={frame} colorMode={settings.colorMode}
-          speedForColor={speedRaw} pathStats={path} selectedFrame={selectedFrame} onSelectFrame={setSelectedFrame} />
+    <>
+      <div style={{ marginBottom: 8 }}>
+        <button onClick={handleExportData} style={{ fontSize: 12 }}>
+          Export track data (CSV)
+        </button>
       </div>
       <div
         style={{
-          gridColumn: "2 / span 3",
-          gridRow: "1",
           display: "grid",
-          gridTemplateRows: "1fr 1fr",
-          gap: 8,
+          gridTemplateColumns: "repeat(4, 1fr)",
+          gridTemplateRows: "480px 300px",
+          gap: 10,
         }}
       >
-        <DirectionPanel frame={frame} dirDeg={dirDeg} fps={settings.fps} colorVals={colorVals} xRange={frameRange} timeCutSec={settings.timeCutSec}
-          selectedFrame={selectedFrame} onSelectFrame={setSelectedFrame} />
-        <SpeedPanel frame={frame} speedRaw={speedRaw} speedSmooth={speedSmooth} xRange={frameRange} fps={settings.fps} timeCutSec={settings.timeCutSec}
-          selectedFrame={selectedFrame} onSelectFrame={setSelectedFrame} speedAxisMax={speedAxisMax} />
+        <div style={{ gridColumn: "1", gridRow: "1" }}>
+          <TrackPanel x={x} y={y} roi={data.roi} colorVals={frame} colorMode={settings.colorMode}
+            speedForColor={speedRaw} pathStats={path} selectedFrame={selectedFrame} onSelectFrame={setSelectedFrame} />
+        </div>
+        <div
+          style={{
+            gridColumn: "2 / span 3",
+            gridRow: "1",
+            display: "grid",
+            gridTemplateRows: "1fr 1fr",
+            gap: 8,
+          }}
+        >
+          <DirectionPanel frame={frame} dirDeg={dirDeg} fps={settings.fps} colorVals={colorVals} xRange={frameRange} timeCutSec={settings.timeCutSec}
+            selectedFrame={selectedFrame} onSelectFrame={setSelectedFrame} />
+          <SpeedPanel frame={frame} speedRaw={speedRaw} speedSmooth={speedSmooth} xRange={frameRange} fps={settings.fps} timeCutSec={settings.timeCutSec}
+            selectedFrame={selectedFrame} onSelectFrame={setSelectedFrame} speedAxisMax={speedAxisMax} />
+        </div>
+        <div style={{ gridColumn: "1", gridRow: "2" }}>
+          <DirectionRosePanel dirDeg={dirAbove} polAngle={settings.polAngle} showPolLine={settings.showPolLine} />
+        </div>
+        <div style={{ gridColumn: "2", gridRow: "2" }}>
+          <SpeedVsDirectionPanel dirDeg={dirDeg} speed={speedRaw} minSpeed={settings.minSpeed} colorVals={colorVals} speedAxisMax={speedAxisMax} />
+        </div>
+        <div style={{ gridColumn: "3", gridRow: "2" }}>
+          <DirectionAxialPanel dirAbove={dirAbove} polAngle={settings.polAngle} meanDeg={meanDeg} R={R} histMaxDir={histMaxDir} />
+        </div>
+        <div style={{ gridColumn: "4", gridRow: "2" }}>
+          <SpeedHistogramPanel speed={speedRaw} minSpeed={settings.minSpeed} speedAxisMax={speedAxisMax} histMaxSpd={histMaxSpd} />
+        </div>
       </div>
-      <div style={{ gridColumn: "1", gridRow: "2" }}>
-        <DirectionRosePanel dirDeg={dirDeg} polAngle={settings.polAngle} showPolLine={settings.showPolLine} />
-      </div>
-      <div style={{ gridColumn: "2", gridRow: "2" }}>
-        <SpeedVsDirectionPanel dirDeg={dirDeg} speed={speedRaw} minSpeed={settings.minSpeed} colorVals={colorVals} speedAxisMax={speedAxisMax} />
-      </div>
-      <div style={{ gridColumn: "3", gridRow: "2" }}>
-        <DirectionAxialPanel dirAbove={dirAbove} polAngle={settings.polAngle} meanDeg={meanDeg} R={R} histMaxDir={histMaxDir} />
-      </div>
-      <div style={{ gridColumn: "4", gridRow: "2" }}>
-        <SpeedHistogramPanel speed={speedRaw} minSpeed={settings.minSpeed} speedAxisMax={speedAxisMax} histMaxSpd={histMaxSpd} />
-      </div>
-    </div>
+    </>
   );
 }
 

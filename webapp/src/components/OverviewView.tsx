@@ -3,6 +3,7 @@ import type { TracksData, Settings, TrackStats } from "../lib/types";
 import { applyFilters, computeTrackStats } from "../lib/analysis";
 import { colorForIndex } from "../lib/palette";
 import { basePlotConfig, baseLayout, gridColor } from "../lib/plotDefaults";
+import { downloadCsv } from "../lib/exportCsv";
 
 interface Props {
   data: TracksData;
@@ -25,26 +26,45 @@ export default function OverviewView({ data, settings, onJumpToTrack }: Props) {
     if (name && data.trackLabels.includes(name)) onJumpToTrack(name);
   };
 
+  const handleExportStats = () => {
+    const header = [
+      "Label", "N_valid", "TotalDist_px", "MeanSpeed_px_s", "MedianSpeed_px_s",
+      "Straightness", "MeanAbsTurn_deg", "NetDisp_px", "MeanAxialDir_deg", "VectorR",
+    ];
+    const rows = stats.map((s) => [
+      s.label, s.nValid, s.totalDist, s.meanSpeed, s.medianSpeed,
+      s.straightness, s.meanAbsTurnDeg, s.netDisp, s.meanAxialDirDeg, s.vectorR,
+    ]);
+    downloadCsv("track_stats.csv", header, rows);
+  };
+
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "1.6fr 1fr",
-        gridTemplateRows: "420px 300px",
-        gap: 10,
-      }}
-    >
-      <div style={{ gridColumn: "1", gridRow: "1 / span 2" }}>
-        <XYOverlayPanel data={data} settings={settings} onClick={handlePlotlyClick} />
+    <>
+      <div style={{ marginBottom: 8 }}>
+        <button onClick={handleExportStats} style={{ fontSize: 12 }}>
+          Export stats (CSV)
+        </button>
       </div>
-      <div style={{ gridColumn: "2", gridRow: "1" }}>
-        <DirectionPolarPanel stats={stats} onClick={handlePlotlyClick} />
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1.6fr 1fr",
+          gridTemplateRows: "420px 300px",
+          gap: 10,
+        }}
+      >
+        <div style={{ gridColumn: "1", gridRow: "1 / span 2" }}>
+          <XYOverlayPanel data={data} settings={settings} onClick={handlePlotlyClick} />
+        </div>
+        <div style={{ gridColumn: "2", gridRow: "1" }}>
+          <DirectionPolarPanel stats={stats} onClick={handlePlotlyClick} />
+        </div>
+        <div style={{ gridColumn: "2", gridRow: "2", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <BarPanel title="Distance" stats={stats} valueOf={(s) => s.totalDist} unit="px" onClick={handlePlotlyClick} />
+          <BarPanel title="Speed" stats={stats} valueOf={(s) => s.meanSpeed} unit="px/s" onClick={handlePlotlyClick} />
+        </div>
       </div>
-      <div style={{ gridColumn: "2", gridRow: "2", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-        <BarPanel title="Distance" stats={stats} valueOf={(s) => s.totalDist} unit="px" onClick={handlePlotlyClick} />
-        <BarPanel title="Speed" stats={stats} valueOf={(s) => s.meanSpeed} unit="px/s" onClick={handlePlotlyClick} />
-      </div>
-    </div>
+    </>
   );
 }
 

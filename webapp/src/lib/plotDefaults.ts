@@ -1,7 +1,12 @@
 import type { Layout, Config } from "plotly.js-dist-min";
 
 export const basePlotConfig: Partial<Config> = {
-  displayModeBar: false,
+  // Modebar hidden until hover, showing only the PNG-export ("camera") icon -
+  // every panel is individually exportable as a figure without cluttering
+  // the view with the rest of Plotly's default toolbar.
+  displayModeBar: "hover",
+  modeBarButtons: [["toImage"]],
+  displaylogo: false,
   responsive: true,
 };
 
