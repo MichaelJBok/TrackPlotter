@@ -247,12 +247,13 @@ function DirectionRosePanel({
       ]}
       layout={baseLayout("Direction (360°)", {
         polar: {
-          radialaxis: { showticklabels: false, ticks: "" },
+          radialaxis: { showticklabels: false, ticks: "", layer: "below traces" },
           angularaxis: {
             direction: "clockwise", // mirrors Y to match the video-orientation Track panel
             rotation: 0,
             tickvals: [0, 90, 180, 270],
             ticktext: ["0°", "90°", "180°", "-90°"],
+            layer: "below traces",
           },
           bgcolor: "white",
         },
@@ -313,7 +314,7 @@ function DirectionAxialPanel({
   const subtitle = Number.isFinite(meanDeg) ? `mean ${meanDeg.toFixed(1)}° | R=${R.toFixed(3)}` : "";
   return (
     <Plot
-      data={[{ x: centers, y: counts, type: "bar", marker: { color: "#2a78d6" }, width: 9 }]}
+      data={[{ x: centers, y: counts, type: "bar", marker: { color: "#2a78d6" }, width: 10 }]}
       layout={baseLayout(`Direction (axial)${subtitle ? `<br><span style="font-size:9px">${subtitle}</span>` : ""}`, {
         xaxis: { title: { text: "Direction (°)" }, range: [0, 180], tickvals: [0, 45, 90, 135, 180], gridcolor: gridColor },
         yaxis: { title: { text: "Count" }, gridcolor: gridColor },
