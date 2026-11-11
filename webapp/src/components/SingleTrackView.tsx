@@ -314,7 +314,7 @@ function DirectionAxialPanel({
   const subtitle = Number.isFinite(meanDeg) ? `mean ${meanDeg.toFixed(1)}° | R=${R.toFixed(3)}` : "";
   return (
     <Plot
-      data={[{ x: centers, y: counts, type: "bar", marker: { color: "#2a78d6" }, width: 10 }]}
+      data={[{ x: centers, y: counts, type: "bar", marker: { color: "#2a78d6", line: { color: "white", width: 1 } }, width: 10 }]}
       layout={baseLayout(`Direction (axial)${subtitle ? `<br><span style="font-size:9px">${subtitle}</span>` : ""}`, {
         xaxis: { title: { text: "Direction (°)" }, range: [0, 180], tickvals: [0, 45, 90, 135, 180], gridcolor: gridColor },
         yaxis: { title: { text: "Count" }, gridcolor: gridColor },
@@ -329,7 +329,7 @@ function DirectionAxialPanel({
 function SpeedHistogramPanel({ speed }: { speed: number[] }) {
   return (
     <Plot
-      data={[{ x: speed, type: "histogram", marker: { color: "#2a78d6" }, nbinsx: 20 }]}
+      data={[{ x: speed, type: "histogram", marker: { color: "#2a78d6", line: { color: "white", width: 1 } }, nbinsx: 20 }]}
       layout={baseLayout("Speed Distribution", {
         xaxis: { title: { text: "Speed (px/s)" }, gridcolor: gridColor },
         yaxis: { title: { text: "Count" }, gridcolor: gridColor },
