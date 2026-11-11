@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import Plot from "react-plotly.js";
 import type { BackgroundImage, TracksData, Settings, TrackStats } from "../lib/types";
 import { applyFilters, computeTrackStats } from "../lib/analysis";
@@ -10,12 +11,13 @@ interface Props {
   settings: Settings;
   onJumpToTrack: (label: string) => void;
   bgImage?: BackgroundImage;
+  registerCsvExport: (fn: () => void) => void;
 }
 
 /** Multi-individual overview: XY overlay (+ optional background image), per-
  * individual distance/speed bars, and a direction polar plot. Clicking any
  * track/bar/point jumps to that individual's single-track view. */
-export default function OverviewView({ data, settings, onJumpToTrack, bgImage }: Props) {
+export default function OverviewView({ data, settings, onJumpToTrack, bgImage, registerCsvExport }: Props) {
   const stats: TrackStats[] = data.trackLabels.map((label) => {
     const raw = data.tracks[label];
     const { x, y } = applyFilters(raw.x, raw.y, data.roi, settings);
@@ -39,13 +41,15 @@ export default function OverviewView({ data, settings, onJumpToTrack, bgImage }:
     downloadCsv("track_stats.csv", header, rows);
   };
 
+  // Hands the CSV-export trigger up to the sidebar, which doesn't have
+  // direct access to `stats` - re-registers whenever it changes.
+  useEffect(() => {
+    registerCsvExport(handleExportStats);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stats]);
+
   return (
     <>
-      <div style={{ marginBottom: 8 }}>
-        <button onClick={handleExportStats} style={{ fontSize: 12 }}>
-          Export stats (CSV)
-        </button>
-      </div>
       <div
         style={{
           display: "grid",

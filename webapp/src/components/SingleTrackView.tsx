@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Plot from "react-plotly.js";
 import type { TracksData, Settings } from "../lib/types";
 import {
@@ -18,6 +18,7 @@ interface Props {
   data: TracksData;
   label: string;
   settings: Settings;
+  registerCsvExport: (fn: () => void) => void;
 }
 
 const SPEED_HIST_BINS = 20;
@@ -71,7 +72,7 @@ function computeGlobalAxisStats(data: TracksData, settings: Settings) {
  * Row 1: [Track] [Speed & Direction (spans cols 2-4)]
  * Row 2: [Direction 360 rose] [Speed vs Direction] [Direction axial 0-180] [Speed distribution]
  */
-export default function SingleTrackView({ data, label, settings }: Props) {
+export default function SingleTrackView({ data, label, settings, registerCsvExport }: Props) {
   const raw = data.tracks[label];
   const { x, y } = applyFilters(raw.x, raw.y, data.roi, settings);
   const { frame, speedRaw, speedSmooth, dirDeg } = computeFrameSeries(x, y, settings.fps, settings.pxScale);
@@ -121,13 +122,15 @@ export default function SingleTrackView({ data, label, settings }: Props) {
     downloadCsv(`${label}_speed_direction.csv`, ["Frame", "Speed_px_s", "Direction_deg"], rows);
   };
 
+  // Hands the CSV-export trigger up to the sidebar - re-registers whenever
+  // the underlying data does, so it always exports the current track.
+  useEffect(() => {
+    registerCsvExport(handleExportData);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [frame, speedRaw, dirDeg, label]);
+
   return (
     <>
-      <div style={{ marginBottom: 8 }}>
-        <button onClick={handleExportData} style={{ fontSize: 12 }}>
-          Export track data (CSV)
-        </button>
-      </div>
       <div
         style={{
           display: "grid",

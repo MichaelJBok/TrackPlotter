@@ -9,7 +9,19 @@ function filenameFromTitle(gd: Readonly<{ _fullLayout: { title?: { text?: string
   return raw.replace(/<[^>]*>/g, " ").replace(/[^\w.-]+/g, "_").replace(/^_+|_+$/g, "") || "plot";
 }
 
-async function downloadPlotAsPdf(gd: any): Promise<void> {
+export async function downloadPlotAsPng(gd: any): Promise<void> {
+  const width = gd._fullLayout.width;
+  const height = gd._fullLayout.height;
+  const dataUrl = await Plotly.toImage(gd, { format: "png", width, height, scale: 2 });
+  const a = document.createElement("a");
+  a.href = dataUrl;
+  a.download = `${filenameFromTitle(gd)}.png`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+export async function downloadPlotAsPdf(gd: any): Promise<void> {
   const width = gd._fullLayout.width;
   const height = gd._fullLayout.height;
   const dataUrl = await Plotly.toImage(gd, { format: "png", width, height, scale: 1.5 });
@@ -22,22 +34,21 @@ async function downloadPlotAsPdf(gd: any): Promise<void> {
   pdf.save(`${filenameFromTitle(gd)}.pdf`);
 }
 
-const downloadPdfButton = {
-  name: "downloadPdf",
-  title: "Download plot as a PDF",
-  icon: Plotly.Icons.disk,
-  click: (gd: any) => {
-    downloadPlotAsPdf(gd).catch((err) => console.error("PDF export failed:", err));
-  },
-};
+/** Exports every Plotly figure currently on screen (whatever view is active)
+ * as separate files, one per figure - used by the sidebar's figure-export
+ * buttons instead of each plot having its own export controls. */
+export async function exportAllVisiblePlots(format: "png" | "pdf"): Promise<void> {
+  const plots = Array.from(document.querySelectorAll<HTMLDivElement>(".js-plotly-plot"));
+  const exportOne = format === "png" ? downloadPlotAsPng : downloadPlotAsPdf;
+  for (const gd of plots) {
+    await exportOne(gd);
+  }
+}
 
 export const basePlotConfig: Partial<Config> = {
-  // Modebar hidden until hover, showing only the PNG/PDF export icons -
-  // every panel is individually exportable as a figure without cluttering
-  // the view with the rest of Plotly's default toolbar.
-  displayModeBar: "hover",
-  modeBarButtons: [["toImage", downloadPdfButton]],
-  displaylogo: false,
+  // Figure export lives in the sidebar (see exportAllVisiblePlots) instead of
+  // a per-plot hover toolbar.
+  displayModeBar: false,
   responsive: true,
 };
 

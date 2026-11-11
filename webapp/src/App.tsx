@@ -9,6 +9,7 @@ import {
   rememberDirectory,
   verifyReadPermission,
 } from "./lib/directoryMemory";
+import { exportAllVisiblePlots } from "./lib/plotDefaults";
 import { DEFAULT_SETTINGS, type BackgroundImage, type Settings } from "./lib/types";
 import OverviewView from "./components/OverviewView";
 import SingleTrackView from "./components/SingleTrackView";
@@ -40,6 +41,14 @@ export default function App() {
   const [rememberedDirName, setRememberedDirName] = useState<string | null>(null);
   const [selection, setSelection] = useState<string>(OVERVIEW);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
+  // Whichever view is mounted (Overview or SingleTrack) registers its own
+  // CSV-export logic here, since it depends on data computed inside that
+  // view - the sidebar just calls whatever's currently registered.
+  const csvExportRef = useRef<(() => void) | null>(null);
+  const registerCsvExport = (fn: () => void) => {
+    csvExportRef.current = fn;
+  };
+  const [figuresExporting, setFiguresExporting] = useState(false);
 
   useEffect(() => {
     if (!directoryPickerSupported) return;
@@ -200,6 +209,15 @@ export default function App() {
     setBgErrors([]);
   }
 
+  async function handleExportFigures(format: "png" | "pdf") {
+    setFiguresExporting(true);
+    try {
+      await exportAllVisiblePlots(format);
+    } finally {
+      setFiguresExporting(false);
+    }
+  }
+
   return (
     <div style={{ display: "flex", height: "100vh" }}>
       <aside
@@ -314,6 +332,34 @@ export default function App() {
         </section>
 
         <SettingsBar settings={settings} onChange={setSettings} />
+
+        <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <SectionLabel>Export</SectionLabel>
+          <button
+            type="button"
+            style={{ fontSize: 12 }}
+            disabled={!data}
+            onClick={() => csvExportRef.current?.()}
+          >
+            Export data (CSV)
+          </button>
+          <button
+            type="button"
+            style={{ fontSize: 12 }}
+            disabled={!data || figuresExporting}
+            onClick={() => handleExportFigures("png")}
+          >
+            Export figures (PNG)
+          </button>
+          <button
+            type="button"
+            style={{ fontSize: 12 }}
+            disabled={!data || figuresExporting}
+            onClick={() => handleExportFigures("pdf")}
+          >
+            Export figures (PDF)
+          </button>
+        </section>
       </aside>
 
       <main style={{ flex: 1, minWidth: 0, overflow: "auto", padding: 16, boxSizing: "border-box" }}>
@@ -331,9 +377,15 @@ export default function App() {
             ever sent anywhere - it's read directly off your disk and stays in this browser tab.
           </p>
         ) : selection === OVERVIEW ? (
-          <OverviewView data={data} settings={settings} onJumpToTrack={setSelection} bgImage={bgImage} />
+          <OverviewView
+            data={data}
+            settings={settings}
+            onJumpToTrack={setSelection}
+            bgImage={bgImage}
+            registerCsvExport={registerCsvExport}
+          />
         ) : (
-          <SingleTrackView data={data} label={selection} settings={settings} />
+          <SingleTrackView data={data} label={selection} settings={settings} registerCsvExport={registerCsvExport} />
         )}
       </main>
     </div>
