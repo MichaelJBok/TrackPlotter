@@ -27,7 +27,6 @@ export default function SingleTrackView({ data, label, settings }: Props) {
   const { frame, speedRaw, speedSmooth, dirDeg } = computeFrameSeries(x, y, settings.fps, settings.pxScale);
   const aboveMask = speedRaw.map((s) => s >= settings.minSpeed);
   const dirAbove = dirDeg.filter((_, i) => aboveMask[i]);
-  const speedAbove = speedRaw.filter((_, i) => aboveMask[i]);
   const path = computePathStats(x, y, settings.pxScale, dirAbove);
   const { meanDeg, R } = axialMeanR(dirAbove, settings.polAngle);
 
@@ -73,7 +72,7 @@ export default function SingleTrackView({ data, label, settings }: Props) {
         <DirectionAxialPanel dirAbove={dirAbove} polAngle={settings.polAngle} meanDeg={meanDeg} R={R} />
       </div>
       <div style={{ gridColumn: "4", gridRow: "2" }}>
-        <SpeedHistogramPanel speed={speedAbove} />
+        <SpeedHistogramPanel speed={speedRaw} minSpeed={settings.minSpeed} />
       </div>
     </div>
   );
@@ -428,13 +427,46 @@ function DirectionAxialPanel({
   );
 }
 
-function SpeedHistogramPanel({ speed }: { speed: number[] }) {
+/** Bins over the full (unfiltered-by-minSpeed) speed range, so the x-axis
+ * never rescales as minSpeed changes — bins below the cutoff are greyed out
+ * in place instead of being dropped, and a dashed line marks the cutoff
+ * (mirrors the MATLAB app's xline). */
+function SpeedHistogramPanel({ speed, minSpeed }: { speed: number[]; minSpeed: number }) {
+  const valid = speed.filter((s) => Number.isFinite(s));
+  const hi = valid.length ? Math.max(...valid) * 1.001 : 1;
+  const nBins = 20;
+  const binWidth = hi / nBins || 1;
+  const counts = new Array(nBins).fill(0);
+  for (const s of valid) {
+    const idx = Math.min(nBins - 1, Math.floor(s / binWidth));
+    counts[idx]++;
+  }
+  const centers = Array.from({ length: nBins }, (_, i) => (i + 0.5) * binWidth);
+  const colors = centers.map((c) => (c >= minSpeed ? "#444" : "#ccc"));
+
   return (
     <Plot
-      data={[{ x: speed, type: "histogram", marker: { color: "#444", line: { color: "white", width: 1 } }, nbinsx: 20 }]}
+      data={[{
+        x: centers,
+        y: counts,
+        type: "bar",
+        marker: { color: colors, line: { color: "white", width: 1 } },
+        width: binWidth,
+      }]}
       layout={baseLayout("Speed Distribution", {
-        xaxis: { title: { text: "Speed (px/s)" }, gridcolor: gridColor },
+        xaxis: { title: { text: "Speed (px/s)" }, gridcolor: gridColor, range: [0, hi] },
         yaxis: { title: { text: "Count" }, gridcolor: gridColor },
+        shapes: minSpeed > 0
+          ? [{
+              type: "line" as const,
+              x0: minSpeed,
+              x1: minSpeed,
+              y0: 0,
+              y1: 1,
+              yref: "paper" as const,
+              line: { color: "#cc2626", width: 1.3, dash: "dash" as const },
+            }]
+          : [],
       })}
       config={basePlotConfig}
       style={{ width: "100%", height: "100%" }}
