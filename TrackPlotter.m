@@ -450,7 +450,6 @@ function TrackPlotter()
         % S=getappdata() which overwrites the shared S, wiping data/animalNames.
         setappdata(fig,'S',S);
 
-        isNewFile = (idx > numel(S.fileSettings)) || isempty(S.fileSettings{idx});
         if hasOverviewOption(names)
             S.popAnimal.String = [{'— Overview (ALL individuals) —'}, names];
         else
@@ -493,8 +492,13 @@ function TrackPlotter()
             S.edtROICenter.String = '0,0';
             S.edtROIDiam.String   = '0';
         end
-        if isNewFile && hasOverviewOption(names)
-            S.popAnimal.Value = 1;      % first look at a multi-individual file → overview
+        % Default to overview for a multi-individual file until the user has
+        % explicitly picked a concrete individual for THIS file (viewOverview,
+        % persisted per-file) — not just "has this file been visited before",
+        % which would flip to the first track as soon as any default settings
+        % got saved for it.
+        if hasOverviewOption(names) && (~isfield(st,'viewOverview') || st.viewOverview)
+            S.popAnimal.Value = 1;
         else
             S.popAnimal.Value = popupValueFromAnimalIndex(min(st.animalIdx, numel(names)), names);
         end
@@ -539,7 +543,8 @@ function TrackPlotter()
             'roiCx',    roiCx, ...
             'roiCy',    roiCy, ...
             'roiD',     roiD, ...
-            'animalIdx', animalIdxToSave);
+            'animalIdx', animalIdxToSave, ...
+            'viewOverview', isOverviewSelected(S));
         setappdata(fig,'S',S);
         refreshListDisplay();
         saveState();
@@ -1951,7 +1956,7 @@ function TrackPlotter()
 
     function st = defSt()
         st = struct('fps',10,'pxScale',1,'minSpd',0,'polAng',0, ...
-                    'roiCx',0,'roiCy',0,'roiD',0,'animalIdx',1);
+                    'roiCx',0,'roiCy',0,'roiD',0,'animalIdx',1,'viewOverview',true);
     end
 
     function [a, b] = parseCoordPair(str)
