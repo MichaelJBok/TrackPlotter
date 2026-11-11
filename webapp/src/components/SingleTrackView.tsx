@@ -13,7 +13,6 @@ import {
 import { coloredLineChunks, PARULA_COLORSCALE } from "../lib/colorLine";
 import { basePlotConfig, baseLayout, gridColor } from "../lib/plotDefaults";
 import { downloadCsv } from "../lib/exportCsv";
-import { recordTrackVideo, downloadBlob } from "../lib/videoExport";
 
 interface Props {
   data: TracksData;
@@ -122,28 +121,11 @@ export default function SingleTrackView({ data, label, settings }: Props) {
     downloadCsv(`${label}_speed_direction.csv`, ["Frame", "Speed_px_s", "Direction_deg"], rows);
   };
 
-  const [videoProgress, setVideoProgress] = useState<number | null>(null);
-  const handleExportVideo = async () => {
-    setVideoProgress(0);
-    try {
-      const blob = await recordTrackVideo({
-        x, y, roi: data.roi, fps: settings.fps, durationSec: 0, showTrail: true,
-        onProgress: setVideoProgress,
-      });
-      downloadBlob(blob, `${label}_track.webm`);
-    } finally {
-      setVideoProgress(null);
-    }
-  };
-
   return (
     <>
-      <div style={{ marginBottom: 8, display: "flex", gap: 8, alignItems: "center" }}>
+      <div style={{ marginBottom: 8 }}>
         <button onClick={handleExportData} style={{ fontSize: 12 }}>
           Export track data (CSV)
-        </button>
-        <button onClick={handleExportVideo} disabled={videoProgress != null} style={{ fontSize: 12 }}>
-          {videoProgress != null ? `Rendering video… ${Math.round(videoProgress * 100)}%` : "Export video (WebM)"}
         </button>
       </div>
       <div
