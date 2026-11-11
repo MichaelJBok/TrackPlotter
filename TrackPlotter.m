@@ -26,6 +26,11 @@ function TrackPlotter()
     S.globalHistMaxSpd = 0;
     S.globalHistMaxDir = 0;
     S.speedPrctile   = 95;
+    % containers.Map is a handle object: writes to it are visible through
+    % every copy of S without needing a setappdata round-trip, so it's used
+    % to cache readtable() results across the many folder-wide scans/exports
+    % that would otherwise each re-read every CSV from disk.
+    S.tableCache     = containers.Map('KeyType','char','ValueType','any');
 
     %% ── Main figure ─────────────────────────────────────────────────────────
     fig = figure('Name','Track Plotter','NumberTitle','off','Color','w', ...
@@ -76,7 +81,8 @@ function TrackPlotter()
         'FontSize',9,'BackgroundColor',[0.94 0.94 0.96], ...
         'ForegroundColor',[0.20 0.20 0.20],'HorizontalAlignment','left');
     S.popSort = uicontrol(LP,'Style','popupmenu', ...
-        'String',{'File name','Wavelength','Pol state','Pol angle','Trial','Individual'}, ...
+        'String',{'File name','Wavelength','Pol state','Pol angle','Trial','Individual', ...
+                   'Experiment (date/video)','Condition code'}, ...
         'Units','pixels','Position',[48 744 210 22], ...
         'FontSize',9,'BackgroundColor','w','Callback',@onSortChanged);
 
@@ -235,6 +241,7 @@ function TrackPlotter()
         S.folder       = d;
         S.files        = {files.name};
         S.fileSettings = cell(1, numel(S.files));
+        S.tableCache   = containers.Map('KeyType','char','ValueType','any');
         [~,dname]      = fileparts(d);
         S.lblFolder.String = dname;
         setappdata(fig,'S',S);
@@ -285,8 +292,12 @@ function TrackPlotter()
         S = getappdata(fig,'S');
         if isempty(S.files), return; end
         n = numel(S.files);
-        % Parse {wl}_{pol|dif}_{angle}_t{trial}_i{individual} from each name
+        % Parse {wl}_{pol|dif}_{angle}_t{trial}_i{individual} from each name (legacy)
         wl = nan(n,1); ps = nan(n,1); ang = nan(n,1); tr = nan(n,1); ind = nan(n,1);
+        % Parse {date}_{videocode}_{condition}_tracks.csv (this dataset's naming):
+        % expKey groups files from the same video/experiment together;
+        % condKey groups the same condition/individual code across experiments.
+        expKey = repmat({''}, n, 1);  condKey = repmat({''}, n, 1);
         for fi = 1:n
             tk = regexp(S.files{fi}, '^(\d+)_(pol|dif)_(\d+)_t(\d+)_i(\d+)', 'tokens', 'once');
             if ~isempty(tk)
@@ -294,20 +305,30 @@ function TrackPlotter()
                 ang(fi) = str2double(tk{3});  tr(fi)  = str2double(tk{4});
                 ind(fi) = str2double(tk{5});
             end
+            tkExp = regexp(S.files{fi}, '^(\d+_[A-Za-z0-9]+)_', 'tokens', 'once');
+            if ~isempty(tkExp), expKey{fi} = tkExp{1}; end
+            tkCond = regexp(S.files{fi}, '_([A-Za-z0-9]+)_tracks\.csv$', 'tokens', 'once');
+            if ~isempty(tkCond), condKey{fi} = tkCond{1}; end
         end
         % Remember the currently selected file so the highlight follows it
         curName = '';
         v = S.lstFiles.Value;
         if v >= 1 && v <= n, curName = S.files{v}; end
 
-        opt = S.popSort.Value;   % 1 name, 2 wl, 3 pol state, 4 angle, 5 trial, 6 individual
+        opt = S.popSort.Value;   % 1 name, 2 wl, 3 pol state, 4 angle, 5 trial, 6 individual, 7 experiment, 8 condition
         if opt == 1
             [~, ord] = sort(lower(S.files));            % alphabetical (original)
-        else
+        elseif opt >= 2 && opt <= 6
             base    = [wl ps ang tr ind];              % unmatched -> NaN -> sorts last
             primary = opt - 1;
             cols    = [primary, setdiff(1:5, primary, 'stable')];   % primary then tiebreakers
             [~, ord] = sortrows(base(:, cols));
+        elseif opt == 7
+            key = lower(strcat(expKey, {'_'}, condKey));   % group by experiment, then condition
+            [~, ord] = sort(key);
+        else
+            key = lower(strcat(condKey, {'_'}, expKey));   % group by condition, then experiment
+            [~, ord] = sort(key);
         end
         S.files        = S.files(ord);
         S.fileSettings = S.fileSettings(ord);
@@ -411,19 +432,13 @@ function TrackPlotter()
 
         fpath = fullfile(S.folder, S.files{idx});
         try
-            T = readtable(fpath);
+            T = getTable(fpath);
         catch ME
             S.lblStatus.String = ['Read error: ' ME.message];
             setappdata(fig,'S',S); return;
         end
 
-        cols  = T.Properties.VariableNames;
-        xCols = cols(~cellfun('isempty', regexp(cols,'_X$')));
-        names = {};
-        for ki = 1:numel(xCols)
-            lbl = xCols{ki}(1:end-2);
-            if ismember([lbl '_Y'], cols), names{end+1} = lbl; end %#ok<AGROW>
-        end
+        names = findAnimalColumns(T);
         if isempty(names)
             S.lblStatus.String = 'No animal columns (need {Label}_X / _Y).';
             setappdata(fig,'S',S); return;
@@ -435,7 +450,12 @@ function TrackPlotter()
         % S=getappdata() which overwrites the shared S, wiping data/animalNames.
         setappdata(fig,'S',S);
 
-        S.popAnimal.String = names;
+        isNewFile = (idx > numel(S.fileSettings)) || isempty(S.fileSettings{idx});
+        if hasOverviewOption(names)
+            S.popAnimal.String = [{'— Overview (ALL individuals) —'}, names];
+        else
+            S.popAnimal.String = names;
+        end
         st = getSettings(idx);          % reads appdata → overwrites shared S
         S = getappdata(fig,'S');        % re-fetch (data=T is now safely in appdata)
         S.edtFPS.String      = num2str(st.fps);
@@ -473,7 +493,11 @@ function TrackPlotter()
             S.edtROICenter.String = '0,0';
             S.edtROIDiam.String   = '0';
         end
-        S.popAnimal.Value = min(st.animalIdx, numel(names));
+        if isNewFile && hasOverviewOption(names)
+            S.popAnimal.Value = 1;      % first look at a multi-individual file → overview
+        else
+            S.popAnimal.Value = popupValueFromAnimalIndex(min(st.animalIdx, numel(names)), names);
+        end
 
         if isempty(S.fileSettings{idx}), S.fileSettings{idx} = st; end
         if ~isempty(tok2)
@@ -496,6 +520,17 @@ function TrackPlotter()
         if idx < 1 || idx > numel(S.files), return; end
         [roiCx, roiCy] = parseCoordPair(S.edtROICenter.String);
         roiD           = parseNum(S.edtROIDiam.String, 0, 0, inf);
+        % Overview has no single "current animal" — keep whatever concrete
+        % individual was last selected instead of overwriting it.
+        if isOverviewSelected(S)
+            animalIdxToSave = 1;
+            if idx <= numel(S.fileSettings) && ~isempty(S.fileSettings{idx})
+                animalIdxToSave = S.fileSettings{idx}.animalIdx;
+            end
+        else
+            animalIdxToSave = animalIndexFromPopupValue(S.popAnimal.Value, S.animalNames);
+        end
+        animalIdxToSave = max(1, min(animalIdxToSave, numel(S.animalNames)));
         S.fileSettings{idx} = struct( ...
             'fps',      parseNum(S.edtFPS.String,       10,  0.001, inf), ...
             'pxScale',  parseNum(S.edtScale.String,     1.0, 0.001, inf), ...
@@ -504,7 +539,7 @@ function TrackPlotter()
             'roiCx',    roiCx, ...
             'roiCy',    roiCy, ...
             'roiD',     roiD, ...
-            'animalIdx', max(1, S.popAnimal.Value));
+            'animalIdx', animalIdxToSave);
         setappdata(fig,'S',S);
         refreshListDisplay();
         saveState();
@@ -546,7 +581,8 @@ function TrackPlotter()
     function drawPlot()
         S = getappdata(fig,'S');
         if isempty(S.animalNames) || isempty(S.data), return; end
-        ai  = max(1, min(S.popAnimal.Value, numel(S.animalNames)));
+        overview = isOverviewSelected(S);
+        ai  = max(1, min(animalIndexFromPopupValue(S.popAnimal.Value, S.animalNames), numel(S.animalNames)));
         lbl = S.animalNames{ai};
         [roiCx, roiCy] = parseCoordPair(S.edtROICenter.String);
         roiD           = parseNum(S.edtROIDiam.String, 0, 0, inf);
@@ -570,9 +606,15 @@ function TrackPlotter()
             'timeCutVal',  parseNum(S.edtTimeCut.String, inf, 0, inf));
         delete(findobj(S.plotPanel,'Type','axes'));
         try
-            renderInto(S.plotPanel, S.data, lbl, st, S.files{S.lstFiles.Value});
-            S.lblStatus.String = sprintf('%s  |  %s  |  %d frames', ...
-                S.files{S.lstFiles.Value}, strrep(lbl,'_',' '), height(S.data));
+            if overview
+                renderOverview(S.plotPanel, S.data, S.animalNames, st, S.files{S.lstFiles.Value});
+                S.lblStatus.String = sprintf('%s  |  Overview  |  %d individuals  |  %d frames', ...
+                    S.files{S.lstFiles.Value}, numel(S.animalNames), height(S.data));
+            else
+                renderInto(S.plotPanel, S.data, lbl, st, S.files{S.lstFiles.Value});
+                S.lblStatus.String = sprintf('%s  |  %s  |  %d frames', ...
+                    S.files{S.lstFiles.Value}, strrep(lbl,'_',' '), height(S.data));
+            end
         catch ME
             S.lblStatus.String = ['Error: ' ME.message];
             errordlg(getReport(ME,'basic','hyperlinks','off'), 'TrackPlotter error');
@@ -593,7 +635,8 @@ function TrackPlotter()
         saveCurrentSettings();
         S = getappdata(fig,'S');
         idx = S.lstFiles.Value;
-        ai  = max(1, min(S.popAnimal.Value, numel(S.animalNames)));
+        overview = isOverviewSelected(S);
+        ai  = max(1, min(animalIndexFromPopupValue(S.popAnimal.Value, S.animalNames), numel(S.animalNames)));
         lbl = S.animalNames{ai};
         [roiCx, roiCy] = parseCoordPair(S.edtROICenter.String);
         roiD = parseNum(S.edtROIDiam.String, 0, 0, inf);
@@ -624,17 +667,33 @@ function TrackPlotter()
         fout.PaperUnits    = 'centimeters';
         fout.PaperSize     = [28 18];
         fout.PaperPosition = [0 0 28 18];
-        renderInto(fout, S.data, lbl, st, S.files{idx});
+        if overview
+            renderOverview(fout, S.data, S.animalNames, st, S.files{idx});
+        else
+            renderInto(fout, S.data, lbl, st, S.files{idx});
+        end
 
         [~,stem] = fileparts(S.files{idx});
-        outPath  = fullfile(outDir, sprintf('%s_%s.pdf', stem, lbl));
+        if overview
+            outPath = fullfile(outDir, sprintf('%s_overview.pdf', stem));
+            tagStr  = 'overview';
+        else
+            outPath = fullfile(outDir, sprintf('%s_%s.pdf', stem, lbl));
+            tagStr  = lbl;
+        end
         saved = false;
         try   print(fout, outPath, '-dpdf'); saved = true; catch; end
         if ~saved, try exportgraphics(fout,outPath,'ContentType','vector'); saved=true; catch; end, end
-        if ~saved, try exportgraphics(fout,outPath,'Resolution',150); catch; end, end
+        if ~saved, try exportgraphics(fout,outPath,'Resolution',150); saved=true; catch; end, end
         delete(fout);
 
-        S.lblStatus.String = sprintf('Saved active figure → TrackPlotter_Figures/%s_%s.pdf', stem, lbl);
+        if saved
+            S.lblStatus.String = sprintf('Saved active figure → TrackPlotter_Figures/%s_%s.pdf', stem, tagStr);
+        else
+            S.lblStatus.String = sprintf('Export FAILED for %s_%s.pdf', stem, tagStr);
+            errordlg(sprintf('Could not export a figure for %s (%s).\nCheck that %s is writable.', ...
+                S.files{idx}, tagStr, outDir), 'TrackPlotter export error');
+        end
         setappdata(fig,'S',S);
     end
 
@@ -656,17 +715,14 @@ function TrackPlotter()
 
         nFiles = numel(S.files);
         nSaved = 0;
+        nOverviewSaved = 0;
+        failedFiles = {};
+        failedOverviewFiles = {};
         for fi = 1:nFiles
             fpath = fullfile(S.folder, S.files{fi});
-            try T = readtable(fpath); catch; continue; end
+            try T = getTable(fpath); catch; continue; end
 
-            cols  = T.Properties.VariableNames;
-            xCols = cols(~cellfun('isempty', regexp(cols,'_X$')));
-            names = {};
-            for ki = 1:numel(xCols)
-                nm = xCols{ki}(1:end-2);
-                if ismember([nm '_Y'],cols), names{end+1}=nm; end %#ok<AGROW>
-            end
+            names = findAnimalColumns(T);
             if isempty(names), continue; end
 
             st  = getSettings(fi);
@@ -699,17 +755,57 @@ function TrackPlotter()
                 try exportgraphics(fout,outPath,'ContentType','vector'); saved=true; catch; end
             end
             if ~saved
-                try exportgraphics(fout,outPath,'Resolution',150); catch; end
+                try exportgraphics(fout,outPath,'Resolution',150); saved=true; catch; end
             end
             delete(fout);
-            nSaved = nSaved + 1;
+            if saved
+                nSaved = nSaved + 1;
+            else
+                failedFiles{end+1} = S.files{fi}; %#ok<AGROW>
+            end
+
+            % Multi-individual file → also save the all-individuals overview.
+            if hasOverviewOption(names)
+                foutOv = figure('Visible','off','Color','w', ...
+                    'Units','centimeters','Position',[1 1 28 18]);
+                foutOv.PaperUnits    = 'centimeters';
+                foutOv.PaperSize     = [28 18];
+                foutOv.PaperPosition = [0 0 28 18];
+
+                renderOverview(foutOv, T, names, st, S.files{fi});
+
+                outPathOv = fullfile(outDir, sprintf('%s_overview.pdf', stem));
+                savedOv = false;
+                try   print(foutOv, outPathOv, '-dpdf'); savedOv = true; catch; end
+                if ~savedOv
+                    try exportgraphics(foutOv,outPathOv,'ContentType','vector'); savedOv=true; catch; end
+                end
+                if ~savedOv
+                    try exportgraphics(foutOv,outPathOv,'Resolution',150); savedOv=true; catch; end
+                end
+                delete(foutOv);
+                if savedOv
+                    nOverviewSaved = nOverviewSaved + 1;
+                else
+                    failedOverviewFiles{end+1} = S.files{fi}; %#ok<AGROW>
+                end
+            end
 
             S.lblStatus.String = sprintf('Saving %d / %d …  %s', fi, nFiles, S.files{fi});
             setappdata(fig,'S',S);
             drawnow;
         end
 
-        S.lblStatus.String = sprintf('Done — %d / %d saved → TrackPlotter_Figures/', nSaved, nFiles);
+        nFailed = numel(failedFiles) + numel(failedOverviewFiles);
+        if nFailed == 0
+            S.lblStatus.String = sprintf('Done — %d saved + %d overviews → TrackPlotter_Figures/', nSaved, nOverviewSaved);
+        else
+            S.lblStatus.String = sprintf('Done — %d saved + %d overviews, %d FAILED → TrackPlotter_Figures/ (see Command Window)', ...
+                nSaved, nOverviewSaved, nFailed);
+            fprintf('TrackPlotter: failed to export a figure for:\n');
+            if ~isempty(failedFiles),          fprintf('  %s\n', failedFiles{:}); end
+            if ~isempty(failedOverviewFiles),  fprintf('  %s (overview)\n', failedOverviewFiles{:}); end
+        end
         setappdata(fig,'S',S);
     end
 
@@ -814,11 +910,20 @@ function TrackPlotter()
         % are allocated by how speeds are actually distributed, so the densely
         % populated slow range gets most of the colormap and rare fast bursts
         % don't dominate it.  Falls back to linear if there is no data.
+        % Rank lookup via interp1 on the unique sorted speeds (O(n log n)),
+        % instead of an O(n·m) broadcast comparison against every query value
+        % (which cost O(nFrames^2) per panel on long tracks).
         spdSorted = sort(sv_raw(:));
         nSpd      = numel(spdSorted);
         if nSpd > 0
-            spdIdx = @(v) max(1, min(256, ...
-                round(sum(spdSorted <= v(:)', 1) / nSpd * 255) + 1));
+            [uSpd, uRank] = unique(spdSorted, 'last');   % uRank(i) = #speeds <= uSpd(i)
+            if isscalar(uSpd)
+                fixedIdx = max(1, min(256, round(uRank/nSpd*255)+1));
+                spdIdx = @(v) repmat(fixedIdx, 1, numel(v));
+            else
+                spdIdx = @(v) max(1, min(256, ...
+                    round(interp1(uSpd, uRank, v(:)', 'linear', 'extrap') / nSpd * 255) + 1));
+            end
         else
             spdIdx = @(v) ones(1, numel(v));
         end
@@ -1117,6 +1222,175 @@ function TrackPlotter()
     end
 
     %% ══════════════════════════════════════════════════════════════════════════
+    %  Overview — all individuals of a multi-individual file at a glance
+    %% ══════════════════════════════════════════════════════════════════════════
+
+    function renderOverview(parent, T, ovNames, st, fname)
+        nInd    = numel(ovNames);
+        fps     = st.fps;
+        pxScale = st.pxScale;
+        minSpd  = st.minSpd;
+        nFrames = height(T);
+        roiCx = 0; roiCy = 0; roiD = 0;
+        if isfield(st,'roiCx'), roiCx = st.roiCx; end
+        if isfield(st,'roiCy'), roiCy = st.roiCy; end
+        if isfield(st,'roiD'),  roiD  = st.roiD;  end
+        if pxScale == 1
+            posUnit = 'px';  spdUnit = 'px/s';
+        else
+            posUnit = 'cm';  spdUnit = 'cm/s';
+        end
+        cmapInd = lines(max(nInd,1));
+
+        % ── Per-individual positions & stats ────────────────────────────────
+        posAll     = cell(nInd,1);
+        ovLabel    = cell(nInd,1);
+        ovCoverage = nan(nInd,1);
+        ovDist     = nan(nInd,1);
+        ovMeanSpd  = nan(nInd,1);
+        ovMedSpd   = nan(nInd,1);
+        ovSI       = nan(nInd,1);
+        for ovI = 1:nInd
+            px = T.([ovNames{ovI} '_X']);
+            py = T.([ovNames{ovI} '_Y']);
+            if isfield(st,'timeCut') && st.timeCut && isfield(st,'timeCutVal') && isfinite(st.timeCutVal)
+                cutIdx = floor(st.timeCutVal * fps) + 1;
+                if cutIdx >= 1 && cutIdx <= nFrames
+                    px(cutIdx:end) = NaN; py(cutIdx:end) = NaN;
+                end
+            end
+            posAll{ovI} = [px, py];
+
+            dx = diff(px);  dy = diff(py);
+            vp = ~isnan(px(1:end-1)) & ~isnan(px(2:end));
+            sv = [];
+            if any(vp), sv = sqrt(dx(vp).^2 + dy(vp).^2) * pxScale * fps; end
+            dm = sv >= minSpd;
+
+            totalDist = 0;
+            if any(vp), totalDist = sum(sqrt(dx(vp).^2 + dy(vp).^2)) * pxScale; end
+            meanSpd = NaN;  medSpd = NaN;
+            if any(dm), meanSpd = mean(sv(dm));  medSpd = median(sv(dm)); end
+            netDisp = NaN;  SI = NaN;
+            vld = find(~isnan(px));
+            if numel(vld) >= 2
+                netDisp = sqrt((px(vld(end))-px(vld(1)))^2 + (py(vld(end))-py(vld(1)))^2) * pxScale;
+                if totalDist > 1e-9, SI = netDisp / totalDist; end
+            end
+
+            ovLabel{ovI}    = ovNames{ovI};
+            ovCoverage(ovI) = numel(vld) / max(nFrames,1) * 100;
+            ovDist(ovI)     = totalDist;
+            ovMeanSpd(ovI)  = meanSpd;
+            ovMedSpd(ovI)   = medSpd;
+            ovSI(ovI)       = SI;
+        end
+
+        % ── Title ────────────────────────────────────────────────────────────
+        axT = axes('Parent',parent,'Position',[0 0.94 1 0.06]); axT.Visible = 'off';
+        text(0.02, 0.5, fname, 'Interpreter','none','HorizontalAlignment','left', ...
+            'VerticalAlignment','middle','FontSize',10,'FontWeight','bold', ...
+            'Color',[0.15 0.15 0.15],'Units','normalized');
+        text(0.98, 0.5, sprintf('Overview — %d individuals', nInd), ...
+            'Interpreter','none','HorizontalAlignment','right', ...
+            'VerticalAlignment','middle','FontSize',10,'FontWeight','bold', ...
+            'Color',[0.15 0.45 0.75],'Units','normalized');
+
+        % ── Panel A: XY overlay of every individual ─────────────────────────
+        axA = axes('Parent',parent,'Position',[0.03 0.06 0.44 0.84]);
+        hold(axA,'on'); axA.Color='w'; grid(axA,'on'); box(axA,'on');
+        axA.XColor=[0.3 0.3 0.3]; axA.YColor=[0.3 0.3 0.3];
+        axA.GridColor=[0.88 0.88 0.88]; axA.GridAlpha=1;
+        xlabel(axA,['X (' posUnit ')'],'FontSize',8);
+        ylabel(axA,['Y (' posUnit ')'],'FontSize',8);
+        title(axA,'All individuals — XY tracks','FontSize',9);
+
+        legH = gobjects(nInd,1);
+        for ovI = 1:nInd
+            px = posAll{ovI}(:,1);  py = posAll{ovI}(:,2);
+            valid = ~isnan(px);
+            if ~any(valid), continue; end
+            lh = plot(axA, px(valid)*pxScale, py(valid)*pxScale, '-', ...
+                'Color', cmapInd(ovI,:), 'LineWidth', 0.9);
+            scatter(axA, px(valid)*pxScale, py(valid)*pxScale, 7, cmapInd(ovI,:), ...
+                'filled', 'MarkerFaceAlpha', 0.45);
+            vidx = find(valid);
+            plot(axA, px(vidx(1))*pxScale, py(vidx(1))*pxScale, 'o', 'MarkerSize',6, ...
+                'MarkerEdgeColor','k','MarkerFaceColor',cmapInd(ovI,:),'LineWidth',1.0);
+            plot(axA, px(vidx(end))*pxScale, py(vidx(end))*pxScale, 'x', 'MarkerSize',8, ...
+                'MarkerEdgeColor',cmapInd(ovI,:),'LineWidth',1.5);
+            legH(ovI) = lh;
+        end
+        if roiD > 0
+            r1  = roiD * pxScale / 2;
+            cx1 = roiCx * pxScale;  cy1 = roiCy * pxScale;
+            m1  = r1 * 0.15;
+            th1 = linspace(0, 2*pi, 120);
+            plot(axA, cx1 + r1*cos(th1), cy1 + r1*sin(th1), '-', ...
+                'Color',[0.82 0.82 0.82],'LineWidth',1.5);
+            axA.XLim = [cx1 - r1 - m1, cx1 + r1 + m1];
+            axA.YLim = [cy1 - r1 - m1, cy1 + r1 + m1];
+        end
+        axis(axA,'equal');
+        okLeg = isgraphics(legH);
+        if any(okLeg)
+            legend(axA, legH(okLeg), strrep(ovLabel(okLeg),'_',' '), ...
+                'Location','eastoutside','FontSize',7);
+        end
+        tpSubtitle(axA, '○ = first valid frame   ✕ = last valid frame');
+
+        % ── Panel B: per-individual summary table ───────────────────────────
+        axB = axes('Parent',parent,'Position',[0.52 0.50 0.45 0.42]); axis(axB,'off');
+        title(axB,'Per-individual summary','FontSize',9);
+        hdrB = sprintf('%-10s %7s %7s %10s %10s %6s', 'Track', 'Valid%', ...
+            sprintf('Dist(%s)',posUnit), sprintf('Mean(%s)',spdUnit), ...
+            sprintf('Med(%s)',spdUnit), 'SI');
+        text(axB, 0, 0.97, hdrB, 'FontName','Courier New','FontSize',8, ...
+            'FontWeight','bold','VerticalAlignment','top','Units','normalized');
+        rowGap = 0.84 / max(nInd,1);
+        for ovI = 1:nInd
+            rowStr = sprintf('%-10s %6.0f%% %10.1f %10.2f %10.2f %6.2f', ...
+                strrep(ovLabel{ovI},'_',' '), ovCoverage(ovI), ovDist(ovI), ...
+                ovMeanSpd(ovI), ovMedSpd(ovI), ovSI(ovI));
+            yPos = 0.88 - rowGap*(ovI-1);
+            text(axB, 0, yPos, rowStr, 'FontName','Courier New','FontSize',8, ...
+                'Color', cmapInd(ovI,:), 'VerticalAlignment','top','Units','normalized');
+        end
+
+        % ── Panel C: total distance by individual ───────────────────────────
+        axC = axes('Parent',parent,'Position',[0.52 0.08 0.195 0.32]);
+        hold(axC,'on'); axC.Color='w'; grid(axC,'on'); box(axC,'on');
+        axC.XColor=[0.3 0.3 0.3]; axC.YColor=[0.3 0.3 0.3];
+        axC.GridColor=[0.88 0.88 0.88]; axC.GridAlpha=1;
+        ylabel(axC, sprintf('Total dist (%s)',posUnit), 'FontSize',8);
+        title(axC, 'Distance', 'FontSize',8);
+        for ovI = 1:nInd
+            v = ovDist(ovI);  if isnan(v), v = 0; end
+            bar(axC, ovI, v, 'FaceColor', cmapInd(ovI,:), 'EdgeColor','none');
+        end
+        axC.XLim = [0.3 nInd+0.7];
+        axC.XTick = 1:nInd; axC.XTickLabel = strrep(ovLabel,'_',' ');
+        axC.XTickLabelRotation = 45;
+
+        % ── Panel D: mean speed by individual ────────────────────────────────
+        axD = axes('Parent',parent,'Position',[0.775 0.08 0.195 0.32]);
+        hold(axD,'on'); axD.Color='w'; grid(axD,'on'); box(axD,'on');
+        axD.XColor=[0.3 0.3 0.3]; axD.YColor=[0.3 0.3 0.3];
+        axD.GridColor=[0.88 0.88 0.88]; axD.GridAlpha=1;
+        ylabel(axD, sprintf('Mean speed (%s)',spdUnit), 'FontSize',8);
+        title(axD, 'Speed', 'FontSize',8);
+        for ovI = 1:nInd
+            v = ovMeanSpd(ovI);  if isnan(v), v = 0; end
+            bar(axD, ovI, v, 'FaceColor', cmapInd(ovI,:), 'EdgeColor','none');
+        end
+        axD.XLim = [0.3 nInd+0.7];
+        axD.XTick = 1:nInd; axD.XTickLabel = strrep(ovLabel,'_',' ');
+        axD.XTickLabelRotation = 45;
+
+        drawnow;
+    end
+
+    %% ══════════════════════════════════════════════════════════════════════════
     %  Session persistence
     %% ══════════════════════════════════════════════════════════════════════════
 
@@ -1192,6 +1466,11 @@ function TrackPlotter()
     end
 
     function scanFolderSpeedMax()
+        % Scans each file's saved/default animalIdx track — the same track
+        % that's actually rendered/exported for that file — so this stays
+        % consistent with scanFolderHistMax below (previously this scanned
+        % every animal column in every file, while the hist scan only used
+        % the selected animal, so the two locked axes weren't comparable).
         S = getappdata(fig,'S');
         if isempty(S.files), return; end
         pct = max(1, min(100, S.speedPrctile));
@@ -1201,32 +1480,28 @@ function TrackPlotter()
         gMax = 0;
         for fi = 1:numel(S.files)
             fpath = fullfile(S.folder, S.files{fi});
-            try, T = readtable(fpath); catch, continue; end
+            try, T = getTable(fpath); catch, continue; end
             fst = defSt();
             if fi <= numel(S.fileSettings) && ~isempty(S.fileSettings{fi})
                 fst = S.fileSettings{fi};
             end
-            pxSc = fst.pxScale;
-            cols  = T.Properties.VariableNames;
-            xCols = cols(~cellfun('isempty', regexp(cols,'_X$')));
-            for ki = 1:numel(xCols)
-                nm = xCols{ki}(1:end-2);
-                if ~ismember([nm '_Y'], cols), continue; end
-                px = T.([nm '_X']);  py = T.([nm '_Y']);
-                if S.chkTimeCut.Value
-                    cutVal = parseNum(S.edtTimeCut.String, inf, 0, inf);
-                    if isfinite(cutVal)
-                        ci = floor(cutVal * fst.fps) + 1;
-                        if ci <= numel(px), px(ci:end) = NaN; py(ci:end) = NaN; end
-                    end
+            names = findAnimalColumns(T);
+            if isempty(names), continue; end
+            nm = names{min(fst.animalIdx, numel(names))};
+            px = T.([nm '_X']);  py = T.([nm '_Y']);
+            if S.chkTimeCut.Value
+                cutVal = parseNum(S.edtTimeCut.String, inf, 0, inf);
+                if isfinite(cutVal)
+                    ci = floor(cutVal * fst.fps) + 1;
+                    if ci <= numel(px), px(ci:end) = NaN; py(ci:end) = NaN; end
                 end
-                dx = diff(px);  dy = diff(py);
-                vp = ~isnan(px(1:end-1)) & ~isnan(px(2:end));
-                if ~any(vp), continue; end
-                spd = sqrt(dx(vp).^2 + dy(vp).^2) * pxSc * fst.fps;
-                if ~isempty(spd)
-                    gMax = max(gMax, prctile(spd, pct));
-                end
+            end
+            dx = diff(px);  dy = diff(py);
+            vp = ~isnan(px(1:end-1)) & ~isnan(px(2:end));
+            if ~any(vp), continue; end
+            spd = sqrt(dx(vp).^2 + dy(vp).^2) * fst.pxScale * fst.fps;
+            if ~isempty(spd)
+                gMax = max(gMax, prctile(spd, pct));
             end
         end
         S = getappdata(fig,'S');
@@ -1245,26 +1520,14 @@ function TrackPlotter()
         maxSpdCnt = 0;  maxDirCnt = 0;
         for fi = 1:numel(S.files)
             fpath = fullfile(S.folder, S.files{fi});
-            try, T = readtable(fpath); catch, continue; end
+            try, T = getTable(fpath); catch, continue; end
             fst = defSt();
             if fi <= numel(S.fileSettings) && ~isempty(S.fileSettings{fi})
                 fst = S.fileSettings{fi};
             end
-            cols  = T.Properties.VariableNames;
-            xCols = cols(~cellfun('isempty', regexp(cols,'_X$')));
-            nm = '';
-            for ki = 1:numel(xCols)
-                cn = xCols{ki}(1:end-2);
-                if ismember([cn '_Y'], cols), nm = cn; break; end
-            end
-            if isempty(nm), continue; end
-            % Use saved animal index if available
-            aCols = {};
-            for ki = 1:numel(xCols)
-                cn = xCols{ki}(1:end-2);
-                if ismember([cn '_Y'], cols), aCols{end+1} = cn; end %#ok<AGROW>
-            end
-            nm = aCols{min(fst.animalIdx, numel(aCols))};
+            names = findAnimalColumns(T);
+            if isempty(names), continue; end
+            nm = names{min(fst.animalIdx, numel(names))};
             px = T.([nm '_X']);  py = T.([nm '_Y']);
             if S.chkTimeCut.Value
                 cutVal = parseNum(S.edtTimeCut.String, inf, 0, inf);
@@ -1304,7 +1567,24 @@ function TrackPlotter()
 ''
 'INPUT DATA'
 '  CSV files with columns {Label}_X and {Label}_Y (pixel'
-'  coordinates, one row per frame).'
+'  coordinates, one row per frame). A file with several such'
+'  pairs (e.g. Track1_X/Y, Track2_X/Y, ...) holds several'
+'  individuals tracked in the same experiment. Optional'
+'  ROI_cx/ROI_cy/ROI_diam columns auto-fill the arena circle.'
+''
+'MULTI-INDIVIDUAL FILES — OVERVIEW'
+'  Files with more than one individual get an extra'
+'  "— Overview (ALL individuals) —" entry at the top of the'
+'  Animal dropdown (selected by default the first time you'
+'  open such a file). It shows every individual''s XY track'
+'  overlaid with a legend, a per-individual stats table'
+'  (coverage %, distance, speed, straightness), and bar charts'
+'  comparing distance and speed across individuals — a quick'
+'  way to spot incomplete or outlier tracks before picking one'
+'  from the dropdown to analyze in full. Batch save and the'
+'  export (💾) button also save this overview alongside the'
+'  per-individual figure. Export CSV writes one row per'
+'  individual (not just the one currently selected).'
 ''
 'TRACK SETTINGS (per file)'
 '  FPS          Frame rate of the recording. Used to convert'
@@ -1407,9 +1687,12 @@ function TrackPlotter()
 '                   Mutually exclusive with Color: time.'
 ''
 'EXPORT STATS CSV'
-'  Computes per-file summary statistics for all files in'
-'  the folder using each file''s saved Track settings, then'
-'  writes a single CSV with one row per file. Columns:'
+'  Computes summary statistics for every individual in every'
+'  file in the folder (using each file''s saved Track settings,'
+'  applied the same way to all its individuals), then writes a'
+'  single CSV with one row per individual — several rows for a'
+'  multi-individual file, naturally one row for a single-'
+'  individual file. Columns:'
 '    file, wavelength_nm, condition, individual, trial, animal,'
 '    fps, scale_cm_per_px, pol_angle_deg, min_speed,'
 '    n_frames_valid, n_frames_above_min, total_dist,'
@@ -1466,15 +1749,17 @@ function TrackPlotter()
         S.lblStatus.String = 'Computing stats…';
         setappdata(fig,'S',S); drawnow;
 
-        % Determine speed/distance units from first configured file
+        % Determine speed/distance units: cm if ANY configured file uses a
+        % pixel scale, otherwise px. (Previously this checked file 1 only,
+        % due to an unconditional break, so a folder mixing default/cm-scaled
+        % files could get every column header mislabeled.)
         posUnit = 'px';  spdUnit = 'px/s';
         for fi = 1:numel(S.files)
-            fst0 = defSt();
-            if fi <= numel(S.fileSettings) && ~isempty(S.fileSettings{fi})
-                fst0 = S.fileSettings{fi};
+            if fi <= numel(S.fileSettings) && ~isempty(S.fileSettings{fi}) ...
+                    && S.fileSettings{fi}.pxScale ~= 1
+                posUnit = 'cm';  spdUnit = 'cm/s';
+                break;
             end
-            if fst0.pxScale ~= 1, posUnit = 'cm'; spdUnit = 'cm/s'; end
-            break;
         end
 
         hdrs = {'file', 'wavelength_nm', 'condition', 'individual', 'trial', ...
@@ -1489,23 +1774,18 @@ function TrackPlotter()
 
         for fi = 1:numel(S.files)
             fpath = fullfile(S.folder, S.files{fi});
-            try, T = readtable(fpath); catch, continue; end
+            try, T = getTable(fpath); catch, continue; end
             fst = defSt();
             if fi <= numel(S.fileSettings) && ~isempty(S.fileSettings{fi})
                 fst = S.fileSettings{fi};
             end
 
-            cols  = T.Properties.VariableNames;
-            xCols = cols(~cellfun('isempty', regexp(cols,'_X$')));
-            aCols = {};
-            for ki = 1:numel(xCols)
-                cn = xCols{ki}(1:end-2);
-                if ismember([cn '_Y'], cols), aCols{end+1} = cn; end %#ok<AGROW>
-            end
+            aCols = findAnimalColumns(T);
             if isempty(aCols), continue; end
-            nm = aCols{min(fst.animalIdx, numel(aCols))};
 
             % Parse wavelength, condition, pol_angle, trial, individual from filename
+            % (legacy {wl}_{pol|dif}_{angle}_t{trial}_i{individual} naming —
+            % NaN/blank for other datasets, e.g. this one's date_videocode names)
             tok = regexp(S.files{fi}, '^(\d+)_(pol|dif)_(\d+)_t(\d+)_i(\d+)', 'tokens', 'once');
             if ~isempty(tok)
                 wl    = str2double(tok{1});  cond  = tok{2};
@@ -1514,6 +1794,12 @@ function TrackPlotter()
             else
                 wl = NaN;  cond = '';  trial = NaN;  indiv = NaN;
             end
+
+        % One row per individual (TrackN) found in the file — a single-
+        % individual legacy file just has one aCols entry, so this loop
+        % reduces to the old one-row-per-file behaviour for those.
+        for ti = 1:numel(aCols)
+            nm = aCols{ti};
 
             posX = T.([nm '_X']);  posY = T.([nm '_Y']);
             if S.chkTimeCut.Value
@@ -1579,6 +1865,7 @@ function TrackPlotter()
                 fst.polAng, fst.minSpd, nValid, nAbove, totalDist, mspd, mdspd, ...
                 mu6, R6, netDisp, SI, meanAbsTurn, cvSpd, ...
                 siRun, runLen, nRuns}; %#ok<AGROW>
+        end % ti (individual)
         end
 
         if isempty(rows)
@@ -1600,6 +1887,54 @@ function TrackPlotter()
     %% ══════════════════════════════════════════════════════════════════════════
     %  Helpers
     %% ══════════════════════════════════════════════════════════════════════════
+
+    function T = getTable(fpath)
+    % Read a CSV once per folder session. containers.Map is a handle object,
+    % so writes to S.tableCache are visible to every other function through
+    % their own getappdata(fig,'S') copy without needing a setappdata here —
+    % this avoids re-reading every file from disk on each folder-wide scan
+    % (speed-max scan, hist-max scan, batch save, CSV export all hit this).
+        S = getappdata(fig,'S');
+        if isKey(S.tableCache, fpath)
+            T = S.tableCache(fpath);
+        else
+            T = readtable(fpath);
+            S.tableCache(fpath) = T;
+        end
+    end
+
+    function names = findAnimalColumns(T)
+    % {Label}_X / {Label}_Y column pairs in a tracks table, in column order.
+        cols  = T.Properties.VariableNames;
+        xCols = cols(endsWith(cols, '_X'));
+        names = {};
+        for ki = 1:numel(xCols)
+            lbl = xCols{ki}(1:end-2);
+            if ismember([lbl '_Y'], cols), names{end+1} = lbl; end %#ok<AGROW>
+        end
+    end
+
+    % ── Overview-selection helpers ──────────────────────────────────────────
+    % Multi-individual files get an extra "Overview" entry prepended to the
+    % Animal popup (position 1); single-individual files don't, so they keep
+    % behaving exactly as before. These three helpers are the only place that
+    % needs to know about the +1 index offset this introduces.
+    function tf = hasOverviewOption(names)
+        tf = numel(names) > 1;
+    end
+
+    function idx = animalIndexFromPopupValue(val, names)
+        if hasOverviewOption(names), idx = val - 1; else, idx = val; end
+        idx = max(1, min(idx, max(numel(names),1)));
+    end
+
+    function val = popupValueFromAnimalIndex(idx, names)
+        if hasOverviewOption(names), val = idx + 1; else, val = idx; end
+    end
+
+    function tf = isOverviewSelected(S)
+        tf = hasOverviewOption(S.animalNames) && S.popAnimal.Value == 1;
+    end
 
     function v = parseNum(str, def, lo, hi)
         v = str2double(str);
