@@ -251,6 +251,7 @@ export default function App() {
                   style={{
                     fontSize: 12,
                     textAlign: "left",
+                    padding: "2px 6px",
                     background: selection === OVERVIEW ? "#dce7f7" : undefined,
                   }}
                 >

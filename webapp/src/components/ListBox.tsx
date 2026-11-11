@@ -9,7 +9,7 @@ interface Props {
   rows?: number;
 }
 
-const ROW_HEIGHT = 26;
+const ROW_HEIGHT = 19;
 
 /** A searchable, alphabetically sorted list box showing `rows` items at once
  * (scrolling for the rest), in place of a native <select> dropdown. */
