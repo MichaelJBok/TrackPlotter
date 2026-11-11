@@ -174,9 +174,20 @@ function TrackPlotter()
         'ForegroundColor',[0.20 0.20 0.20],'HorizontalAlignment','left');
 
     S.chkHistLock = uicontrol(LP,'Style','checkbox','String','Lock hist. Y axis', ...
-        'Units','pixels','Position',[10 82 248 18], ...
+        'Units','pixels','Position',[10 82 140 18], ...
         'Value',0,'FontSize',9,'BackgroundColor',[0.94 0.94 0.96], ...
         'ForegroundColor',[0.20 0.20 0.20],'Callback',@onChkHistLock);
+    uicontrol(LP,'Style','text','String','Max ROI%:', ...
+        'Units','pixels','Position',[150 82 64 18], ...
+        'FontSize',9,'BackgroundColor',[0.94 0.94 0.96], ...
+        'ForegroundColor',[0.20 0.20 0.20],'HorizontalAlignment','left', ...
+        'TooltipString',sprintf(['Omit track points farther than this %% of the\n' ...
+            'ROI radius from its center (0 = off).']));
+    S.edtROIFilterPct = uicontrol(LP,'Style','edit','String','0', ...
+        'Units','pixels','Position',[214 82 44 20], ...
+        'FontSize',9,'BackgroundColor','w','Callback',@onROIFilterChanged, ...
+        'TooltipString',sprintf(['Omit track points farther than this %% of the\n' ...
+            'ROI radius from its center (0 = off).']));
 
     S.chkTimeCut = uicontrol(LP,'Style','checkbox','String','Time cutoff (s)', ...
         'Units','pixels','Position',[10 60 165 18], ...
@@ -412,6 +423,11 @@ function TrackPlotter()
         drawPlot();
     end
 
+    function onROIFilterChanged(~,~)
+        saveState();
+        drawPlot();
+    end
+
     function onCopyToAll(~,~)
         S = getappdata(fig,'S');
         if isempty(S.files) || isempty(S.data), return; end
@@ -642,6 +658,7 @@ function TrackPlotter()
             'roiCx',      roiCx, ...
             'roiCy',      roiCy, ...
             'roiD',       roiD, ...
+            'roiFilterPct', parseNum(S.edtROIFilterPct.String, 0, 0, 1000), ...
             'useColormap', logical(S.chkColormap.Value), ...
             'useSpeedColor', logical(S.chkColorSpeed.Value), ...
             'showPolLine', logical(S.chkPolLine.Value), ...
@@ -696,6 +713,7 @@ function TrackPlotter()
             'roiCx',      roiCx, ...
             'roiCy',      roiCy, ...
             'roiD',       roiD, ...
+            'roiFilterPct', parseNum(S.edtROIFilterPct.String, 0, 0, 1000), ...
             'useColormap', logical(S.chkColormap.Value), ...
             'useSpeedColor', logical(S.chkColorSpeed.Value), ...
             'showPolLine', logical(S.chkPolLine.Value), ...
@@ -785,6 +803,7 @@ function TrackPlotter()
             st.histMaxDir  = S.globalHistMaxDir;
             st.timeCut     = logical(S.chkTimeCut.Value);
             st.timeCutVal  = parseNum(S.edtTimeCut.String, inf, 0, inf);
+            st.roiFilterPct = parseNum(S.edtROIFilterPct.String, 0, 0, 1000);
             lbl = names{min(st.animalIdx, numel(names))};
 
             fout = figure('Visible','off','Color','w', ...
@@ -898,6 +917,9 @@ function TrackPlotter()
                 posX(cutIdx:end) = NaN;
                 posY(cutIdx:end) = NaN;
             end
+        end
+        if isfield(st,'roiFilterPct')
+            [posX, posY] = applyROIFilter(posX, posY, roiCx, roiCy, roiD, st.roiFilterPct);
         end
 
         useSpeedColor = isfield(st,'useSpeedColor') && st.useSpeedColor;
@@ -1351,6 +1373,9 @@ function TrackPlotter()
                     px(cutIdx:end) = NaN; py(cutIdx:end) = NaN;
                 end
             end
+            if isfield(st,'roiFilterPct')
+                [px, py] = applyROIFilter(px, py, roiCx, roiCy, roiD, st.roiFilterPct);
+            end
             posAll{ovI} = [px, py];
 
             dx = diff(px);  dy = diff(py);
@@ -1392,7 +1417,8 @@ function TrackPlotter()
         text(0.02, 0.5, fname, 'Interpreter','none','HorizontalAlignment','left', ...
             'VerticalAlignment','middle','FontSize',10,'FontWeight','bold', ...
             'Color',[0.15 0.15 0.15],'Units','normalized');
-        text(0.98, 0.5, sprintf('Overview — %d individuals', nInd), ...
+        indivWord = 'individuals';  if nInd == 1, indivWord = 'individual'; end
+        text(0.98, 0.5, sprintf('Overview — %d %s', nInd, indivWord), ...
             'Interpreter','none','HorizontalAlignment','right', ...
             'VerticalAlignment','middle','FontSize',10,'FontWeight','bold', ...
             'Color',[0.15 0.45 0.75],'Units','normalized');
@@ -1552,10 +1578,11 @@ function TrackPlotter()
         useColormap  = logical(S.chkColormap.Value); %#ok<NASGU>
         useSpeedColor = logical(S.chkColorSpeed.Value); %#ok<NASGU>
         lockSpeed    = logical(S.chkSpeedLock.Value); %#ok<NASGU>
+        roiFilterPct = parseNum(S.edtROIFilterPct.String, 0, 0, 1000); %#ok<NASGU>
         try
             save(stateFile, 'files', 'fileSettings', 'speedPrctile', ...
                 'lockHist', 'timeCut', 'timeCutVal', 'showPolLine', ...
-                'useColormap', 'useSpeedColor', 'lockSpeed');
+                'useColormap', 'useSpeedColor', 'lockSpeed', 'roiFilterPct');
         catch
         end
     end
@@ -1568,7 +1595,7 @@ function TrackPlotter()
         try
             saved = load(stateFile, 'files', 'fileSettings', 'speedPrctile', ...
                 'lockHist', 'timeCut', 'timeCutVal', 'showPolLine', ...
-                'useColormap', 'useSpeedColor', 'lockSpeed');
+                'useColormap', 'useSpeedColor', 'lockSpeed', 'roiFilterPct');
         catch
             return;
         end
@@ -1606,6 +1633,9 @@ function TrackPlotter()
         if isfield(saved,'lockSpeed')
             S.chkSpeedLock.Value = double(saved.lockSpeed);
         end
+        if isfield(saved,'roiFilterPct') && isfinite(saved.roiFilterPct)
+            S.edtROIFilterPct.String = num2str(saved.roiFilterPct);
+        end
         setappdata(fig,'S',S);
     end
 
@@ -1640,6 +1670,8 @@ function TrackPlotter()
                     if ci <= numel(px), px(ci:end) = NaN; py(ci:end) = NaN; end
                 end
             end
+            [px, py] = applyROIFilter(px, py, fst.roiCx, fst.roiCy, fst.roiD, ...
+                parseNum(S.edtROIFilterPct.String, 0, 0, 1000));
             dx = diff(px);  dy = diff(py);
             vp = ~isnan(px(1:end-1)) & ~isnan(px(2:end));
             if ~any(vp), continue; end
@@ -1680,6 +1712,8 @@ function TrackPlotter()
                     if ci <= numel(px), px(ci:end) = NaN; py(ci:end) = NaN; end
                 end
             end
+            [px, py] = applyROIFilter(px, py, fst.roiCx, fst.roiCy, fst.roiD, ...
+                parseNum(S.edtROIFilterPct.String, 0, 0, 1000));
             dx = diff(px);  dy = diff(py);
             vp = ~isnan(px(1:end-1)) & ~isnan(px(2:end));
             if ~any(vp), continue; end
@@ -1827,6 +1861,16 @@ function TrackPlotter()
 '                   histograms share the same Y-axis limit'
 '                   (folder-wide maximum bin count).'
 ''
+'  Max ROI%         Omits any track point farther than this'
+'                   percent of the ROI radius from the ROI'
+'                   center — e.g. 110 keeps a 10% margin beyond'
+'                   the nominal arena edge, 90 is stricter than'
+'                   the nominal edge. 0 (default) turns this off.'
+'                   Applies to every file using its own ROI,'
+'                   same as a time cutoff: omitted points become'
+'                   NaN before any distance/speed/direction stat'
+'                   is computed, in every view and export.'
+''
 '  Color: time      Parula gradient encoding elapsed time for all'
 '                   coloured elements (off = uniform grey).'
 '  Color: speed     Parula gradient encoding speed instead of time,'
@@ -1957,6 +2001,8 @@ function TrackPlotter()
                     if ci <= numel(posX), posX(ci:end) = NaN; posY(ci:end) = NaN; end
                 end
             end
+            [posX, posY] = applyROIFilter(posX, posY, fst.roiCx, fst.roiCy, fst.roiD, ...
+                parseNum(S.edtROIFilterPct.String, 0, 0, 1000));
             dx = diff(posX);       dy   = diff(posY);
             spd_v = sqrt(dx.^2 + dy.^2);
             dir_v = atan2d(dy, dx);
@@ -2117,6 +2163,20 @@ function TrackPlotter()
         else
             cmap = [base; turbo(n - size(base,1))];
         end
+    end
+
+    function [px, py] = applyROIFilter(px, py, roiCx, roiCy, roiD, pct)
+    % Treats any point farther than pct% of the ROI radius from its center
+    % as a tracking error (e.g. bleeding onto the dish rim/background) and
+    % drops it to NaN, same as a timeCut truncation. pct<=0 (the default)
+    % or no ROI set leaves the data untouched.
+        if ~(isfinite(pct) && pct > 0) || ~(isfinite(roiD) && roiD > 0)
+            return;
+        end
+        radius  = (roiD / 2) * (pct / 100);
+        outside = sqrt((px - roiCx).^2 + (py - roiCy).^2) > radius;
+        px(outside) = NaN;
+        py(outside) = NaN;
     end
 
     function st = defSt()
