@@ -1,3 +1,4 @@
+import { useState } from "react";
 import Plot from "react-plotly.js";
 import type { TracksData, Settings } from "../lib/types";
 import {
@@ -33,6 +34,8 @@ export default function SingleTrackView({ data, label, settings }: Props) {
   const colorVals = settings.colorMode === "speed" ? speedRaw : frame;
   const frameRange: [number, number] = frame.length ? [frame[0], frame[frame.length - 1]] : [0, 1];
 
+  const [selectedFrame, setSelectedFrame] = useState<number | null>(null);
+
   return (
     <div
       style={{
@@ -44,7 +47,7 @@ export default function SingleTrackView({ data, label, settings }: Props) {
     >
       <div style={{ gridColumn: "1", gridRow: "1" }}>
         <TrackPanel x={x} y={y} roi={data.roi} colorVals={frame} colorMode={settings.colorMode}
-          speedForColor={speedRaw} pathStats={path} />
+          speedForColor={speedRaw} pathStats={path} selectedFrame={selectedFrame} onSelectFrame={setSelectedFrame} />
       </div>
       <div
         style={{
@@ -55,8 +58,10 @@ export default function SingleTrackView({ data, label, settings }: Props) {
           gap: 8,
         }}
       >
-        <DirectionPanel frame={frame} dirDeg={dirDeg} fps={settings.fps} colorVals={colorVals} xRange={frameRange} timeCutSec={settings.timeCutSec} />
-        <SpeedPanel frame={frame} speedRaw={speedRaw} speedSmooth={speedSmooth} xRange={frameRange} fps={settings.fps} timeCutSec={settings.timeCutSec} />
+        <DirectionPanel frame={frame} dirDeg={dirDeg} fps={settings.fps} colorVals={colorVals} xRange={frameRange} timeCutSec={settings.timeCutSec}
+          selectedFrame={selectedFrame} onSelectFrame={setSelectedFrame} />
+        <SpeedPanel frame={frame} speedRaw={speedRaw} speedSmooth={speedSmooth} xRange={frameRange} fps={settings.fps} timeCutSec={settings.timeCutSec}
+          selectedFrame={selectedFrame} onSelectFrame={setSelectedFrame} />
       </div>
       <div style={{ gridColumn: "1", gridRow: "2" }}>
         <DirectionRosePanel dirDeg={dirDeg} polAngle={settings.polAngle} showPolLine={settings.showPolLine} />
@@ -75,11 +80,12 @@ export default function SingleTrackView({ data, label, settings }: Props) {
 }
 
 function TrackPanel({
-  x, y, roi, colorVals, colorMode, speedForColor, pathStats,
+  x, y, roi, colorVals, colorMode, speedForColor, pathStats, selectedFrame, onSelectFrame,
 }: {
   x: number[]; y: number[]; roi: TracksData["roi"];
   colorVals: number[]; colorMode: Settings["colorMode"]; speedForColor: number[];
   pathStats: { straightness: number; meanAbsTurnDeg: number; netDisp: number };
+  selectedFrame: number | null; onSelectFrame: (frame: number) => void;
 }) {
   const shapes = roi
     ? [
@@ -99,6 +105,17 @@ function TrackPanel({
   const subtitle = Number.isFinite(pathStats.straightness)
     ? `SI=${pathStats.straightness.toFixed(2)} | turn=${pathStats.meanAbsTurnDeg.toFixed(1)}° | disp=${pathStats.netDisp.toFixed(0)}px`
     : "";
+  // Track_X/Y rows are 0-indexed; the shared "frame" numbering elsewhere in
+  // this view is 1-based (row i == frame i+1), so convert both ways here.
+  const highlightIdx = selectedFrame != null ? selectedFrame - 1 : -1;
+  const hasHighlight = highlightIdx >= 0 && highlightIdx < x.length
+    && Number.isFinite(x[highlightIdx]) && Number.isFinite(y[highlightIdx]);
+
+  const handleClick = (e: Readonly<{ points: ReadonlyArray<{ pointIndex?: number }> }>) => {
+    const idx = e.points?.[0]?.pointIndex;
+    if (idx != null) onSelectFrame(idx + 1);
+  };
+
   return (
     <Plot
       data={[
@@ -108,8 +125,21 @@ function TrackPanel({
           type: "scattergl",
           mode: "markers",
           marker: { size: 5, color: colorSrc, colorscale: "Viridis" },
-          hoverinfo: "skip",
+          hoverinfo: "none", // "skip" (unlike "none") also suppresses click events
         },
+        ...(hasHighlight
+          ? [
+              {
+                x: [x[highlightIdx]],
+                y: [y[highlightIdx]],
+                type: "scattergl" as const, // same canvas as the main trace, so it draws on top of it
+                mode: "markers" as const,
+                marker: { size: 12, color: "#e02424", line: { color: "white", width: 1.5 } },
+                hoverinfo: "skip" as const,
+                showlegend: false,
+              },
+            ]
+          : []),
       ]}
       layout={baseLayout(`Track${subtitle ? `<br><span style="font-size:9px">${subtitle}</span>` : ""}`, {
         xaxis: { title: { text: "X (px)" }, gridcolor: gridColor },
@@ -119,6 +149,7 @@ function TrackPanel({
       config={basePlotConfig}
       style={{ width: "100%", height: "100%" }}
       useResizeHandler
+      onClick={handleClick}
     />
   );
 }
@@ -141,15 +172,38 @@ function timeCutShape(fps: number, timeCutSec: number | null) {
   ];
 }
 
+/** A vertical solid line marking the frame selected by clicking a point in
+ * the Track/Direction/Speed panel, shared by the Direction and Speed panels. */
+function selectionShape(selectedFrame: number | null) {
+  if (selectedFrame == null) return [];
+  return [
+    {
+      type: "line" as const,
+      x0: selectedFrame,
+      x1: selectedFrame,
+      y0: 0,
+      y1: 1,
+      yref: "paper" as const,
+      line: { color: "#e02424", width: 1.3 },
+    },
+  ];
+}
+
 function DirectionPanel({
-  frame, dirDeg, fps, colorVals, xRange, timeCutSec,
+  frame, dirDeg, fps, colorVals, xRange, timeCutSec, selectedFrame, onSelectFrame,
 }: {
   frame: number[]; dirDeg: number[]; fps: number; colorVals: number[];
   xRange: [number, number]; timeCutSec: number | null;
+  selectedFrame: number | null; onSelectFrame: (frame: number) => void;
 }) {
   const dirSmooth = circularMovingAverage(dirDeg, 5);
   const durationSec = frame.length ? frame[frame.length - 1] / fps : 0;
   const lineChunks = coloredLineChunks(frame, dirSmooth, colorVals, 8, 180);
+
+  const handleClick = (e: Readonly<{ points: ReadonlyArray<{ x?: number }> }>) => {
+    const f = e.points?.[0]?.x;
+    if (f != null) onSelectFrame(Math.round(f));
+  };
 
   return (
     <Plot
@@ -161,7 +215,7 @@ function DirectionPanel({
           mode: "markers",
           marker: { size: 4, color: colorVals, colorscale: "Viridis", opacity: 0.5 },
           name: "Direction",
-          hoverinfo: "skip",
+          hoverinfo: "none", // "skip" (unlike "none") also suppresses click events
         },
         ...lineChunks.map((c) => ({
           x: c.x,
@@ -192,22 +246,29 @@ function DirectionPanel({
           range: [-180, 180],
           tickvals: [-180, -90, 0, 90, 180],
         },
-        shapes: timeCutShape(fps, timeCutSec),
+        shapes: [...timeCutShape(fps, timeCutSec), ...selectionShape(selectedFrame)],
         margin: { l: 50, r: 20, t: 40, b: 10 },
       })}
       config={basePlotConfig}
       style={{ width: "100%", height: "100%" }}
       useResizeHandler
+      onClick={handleClick}
     />
   );
 }
 
 function SpeedPanel({
-  frame, speedRaw, speedSmooth, xRange, fps, timeCutSec,
+  frame, speedRaw, speedSmooth, xRange, fps, timeCutSec, selectedFrame, onSelectFrame,
 }: {
   frame: number[]; speedRaw: number[]; speedSmooth: number[];
   xRange: [number, number]; fps: number; timeCutSec: number | null;
+  selectedFrame: number | null; onSelectFrame: (frame: number) => void;
 }) {
+  const handleClick = (e: Readonly<{ points: ReadonlyArray<{ x?: number }> }>) => {
+    const f = e.points?.[0]?.x;
+    if (f != null) onSelectFrame(Math.round(f));
+  };
+
   return (
     <Plot
       data={[
@@ -218,7 +279,7 @@ function SpeedPanel({
           mode: "markers",
           marker: { size: 4, color: "#bbb", opacity: 0.5 },
           name: "Speed",
-          hoverinfo: "skip",
+          hoverinfo: "none", // "skip" (unlike "none") also suppresses click events
         },
         {
           x: frame,
@@ -238,12 +299,13 @@ function SpeedPanel({
           range: xRange,
         },
         yaxis: { title: { text: "Speed (px/s)" }, gridcolor: gridColor },
-        shapes: timeCutShape(fps, timeCutSec),
+        shapes: [...timeCutShape(fps, timeCutSec), ...selectionShape(selectedFrame)],
         margin: { l: 50, r: 20, t: 24, b: 36 },
       })}
       config={basePlotConfig}
       style={{ width: "100%", height: "100%" }}
       useResizeHandler
+      onClick={handleClick}
     />
   );
 }
