@@ -8,6 +8,7 @@ import {
   circularMovingAverage,
   axialMeanR,
   percentile,
+  computeSpectrum,
 } from "../lib/analysis";
 import { coloredLineChunks, PARULA_COLORSCALE } from "../lib/colorLine";
 import { basePlotConfig, baseLayout, gridColor } from "../lib/plotDefaults";
@@ -98,6 +99,19 @@ export default function SingleTrackView({ data, label, settings }: Props) {
   const histMaxSpd = settings.lockHistAxis && globalStats ? globalStats.histMaxSpd : null;
   const histMaxDir = settings.lockHistAxis && globalStats ? globalStats.histMaxDir : null;
 
+  // Just for fun: small amplitude-spectrum panels beside the Direction/Speed
+  // plots. Direction is FFT'd via sin(dirDeg) rather than the raw degrees,
+  // since a bearing wrapping past +-180 would otherwise look like a huge,
+  // meaningless jump to the DFT.
+  const dirSpectrum = useMemo(
+    () => computeSpectrum(dirDeg.map((d) => Math.sin((d * Math.PI) / 180)), settings.fps),
+    [dirDeg, settings.fps],
+  );
+  const speedSpectrum = useMemo(
+    () => computeSpectrum(speedRaw, settings.fps),
+    [speedRaw, settings.fps],
+  );
+
   return (
     <div
       style={{
@@ -116,14 +130,17 @@ export default function SingleTrackView({ data, label, settings }: Props) {
           gridColumn: "2 / span 3",
           gridRow: "1",
           display: "grid",
+          gridTemplateColumns: "1fr 150px",
           gridTemplateRows: "1fr 1fr",
           gap: 8,
         }}
       >
         <DirectionPanel frame={frame} dirDeg={dirDeg} fps={settings.fps} colorVals={colorVals} xRange={frameRange} timeCutSec={settings.timeCutSec}
           selectedFrame={selectedFrame} onSelectFrame={setSelectedFrame} />
+        <FFTPanel title="Dir FFT" freq={dirSpectrum.freq} mag={dirSpectrum.mag} />
         <SpeedPanel frame={frame} speedRaw={speedRaw} speedSmooth={speedSmooth} xRange={frameRange} fps={settings.fps} timeCutSec={settings.timeCutSec}
           selectedFrame={selectedFrame} onSelectFrame={setSelectedFrame} speedAxisMax={speedAxisMax} />
+        <FFTPanel title="Speed FFT" freq={speedSpectrum.freq} mag={speedSpectrum.mag} />
       </div>
       <div style={{ gridColumn: "1", gridRow: "2" }}>
         <DirectionRosePanel dirDeg={dirDeg} polAngle={settings.polAngle} showPolLine={settings.showPolLine} />
@@ -373,6 +390,35 @@ function SpeedPanel({
       style={{ width: "100%", height: "100%" }}
       useResizeHandler
       onClick={handleClick}
+    />
+  );
+}
+
+/** Small amplitude-spectrum panel, shown beside Direction/Speed. */
+function FFTPanel({ title, freq, mag }: { title: string; freq: number[]; mag: number[] }) {
+  return (
+    <Plot
+      data={[
+        {
+          x: freq,
+          y: mag,
+          type: "scatter",
+          mode: "lines",
+          line: { color: "#444", width: 1 },
+          fill: "tozeroy",
+          fillcolor: "rgba(68,68,68,0.15)",
+          hoverinfo: "skip",
+        },
+      ]}
+      layout={baseLayout(title, {
+        xaxis: { title: { text: "Hz", font: { size: 8 } }, gridcolor: gridColor, tickfont: { size: 7 }, nticks: 3 },
+        yaxis: { showticklabels: false, gridcolor: gridColor },
+        margin: { l: 6, r: 6, t: 20, b: 22 },
+        font: { size: 8 },
+      })}
+      config={basePlotConfig}
+      style={{ width: "100%", height: "100%" }}
+      useResizeHandler
     />
   );
 }

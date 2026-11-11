@@ -207,3 +207,35 @@ export function percentile(values: number[], pct: number): number {
   if (lo === hi) return s[lo];
   return s[lo] + (s[hi] - s[lo]) * (rank - lo);
 }
+
+export interface Spectrum {
+  freq: number[];
+  mag: number[];
+}
+
+/** Amplitude spectrum via a direct (naive O(n^2)) DFT — fine at the track
+ * lengths this app deals with, and avoids pulling in an FFT library for one
+ * "just for fun" panel. Treats the series as evenly sampled at `fps`, which
+ * is only approximate across a dropout gap. The mean is removed first so
+ * the (typically huge) DC term doesn't swamp the rest of the spectrum. */
+export function computeSpectrum(values: number[], fps: number): Spectrum {
+  const n = values.length;
+  if (n < 4) return { freq: [], mag: [] };
+  const mean = values.reduce((a, b) => a + b, 0) / n;
+  const centered = values.map((v) => v - mean);
+  const nBins = Math.floor(n / 2);
+  const freq: number[] = [];
+  const mag: number[] = [];
+  for (let k = 1; k <= nBins; k++) {
+    let re = 0;
+    let im = 0;
+    for (let t = 0; t < n; t++) {
+      const theta = (-2 * Math.PI * k * t) / n;
+      re += centered[t] * Math.cos(theta);
+      im += centered[t] * Math.sin(theta);
+    }
+    freq.push((k * fps) / n);
+    mag.push((2 / n) * Math.hypot(re, im));
+  }
+  return { freq, mag };
+}
