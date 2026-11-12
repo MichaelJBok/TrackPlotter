@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 interface Props {
   items: string[];
@@ -14,11 +14,15 @@ const ROW_HEIGHT = 19;
 
 /** An alphabetically sorted list box showing `rows` items at once (scrolling
  * for the rest), in place of a native <select> dropdown. Optionally has a
- * text filter above it (showSearch, on by default). */
+ * text filter above it (showSearch, on by default). ArrowUp/ArrowDown step
+ * through the (filtered) list - from the search input, or from the list
+ * itself once a row's been clicked - instead of scrolling the page, which
+ * is what happens by default when no focusable control catches the key. */
 export default function ListBox({
   items, value, onSelect, placeholder, emptyMessage = "No items", rows = 10, showSearch = true,
 }: Props) {
   const [filter, setFilter] = useState("");
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -26,8 +30,37 @@ export default function ListBox({
     return matched.slice().sort((a, b) => a.localeCompare(b));
   }, [items, filter]);
 
+  // Keeps the selected row in view, whether it moved via arrow keys or a
+  // click near the edge of the visible window.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || value == null) return;
+    const idx = filtered.indexOf(value);
+    if (idx < 0) return;
+    const top = idx * ROW_HEIGHT;
+    if (top < el.scrollTop) el.scrollTop = top;
+    else if (top + ROW_HEIGHT > el.scrollTop + el.clientHeight) el.scrollTop = top + ROW_HEIGHT - el.clientHeight;
+  }, [value, filtered]);
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    if (filtered.length === 0) return;
+    e.preventDefault(); // otherwise the browser just scrolls the page
+    const idx = value != null ? filtered.indexOf(value) : -1;
+    const nextIdx =
+      e.key === "ArrowDown" ? Math.min(filtered.length - 1, idx + 1) : Math.max(0, idx < 0 ? 0 : idx - 1);
+    onSelect(filtered[nextIdx]);
+  }
+
+  function handleRowClick(item: string) {
+    onSelect(item);
+    // So arrow keys keep working right after a click, with no search input
+    // to hold focus (the Animal list has none).
+    containerRef.current?.focus();
+  }
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+    <div onKeyDown={handleKeyDown} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
       {showSearch && (
         <input
           type="text"
@@ -39,12 +72,15 @@ export default function ListBox({
         />
       )}
       <div
+        ref={containerRef}
+        tabIndex={items.length === 0 ? undefined : 0}
         style={{
           border: "1px solid #ccc",
           borderRadius: 4,
           maxHeight: ROW_HEIGHT * rows,
           overflowY: "auto",
           background: "white",
+          outline: "none",
         }}
       >
         {filtered.length === 0 ? (
@@ -53,7 +89,7 @@ export default function ListBox({
           filtered.map((item) => (
             <div
               key={item}
-              onClick={() => onSelect(item)}
+              onClick={() => handleRowClick(item)}
               title={item}
               style={{
                 height: ROW_HEIGHT,
