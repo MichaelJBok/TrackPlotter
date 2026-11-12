@@ -1,9 +1,10 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { parseTracksCsv } from "./lib/parseCsv";
 import { backgroundImageTag, loadBackgroundImage } from "./lib/backgroundImage";
 import { collectFiles, directoryPickerSupported } from "./lib/directoryPicker";
 import { exportAllVisiblePlots } from "./lib/plotDefaults";
-import { DEFAULT_SETTINGS, type BackgroundImage, type Settings } from "./lib/types";
+import { loadSettings, saveSettings } from "./lib/settingsStorage";
+import { type BackgroundImage, type Settings } from "./lib/types";
 import OverviewView from "./components/OverviewView";
 import SingleTrackView from "./components/SingleTrackView";
 import ListBox from "./components/ListBox";
@@ -31,7 +32,11 @@ export default function App() {
   const bgInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const [selection, setSelection] = useState<string>(OVERVIEW);
-  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
+  const [settings, setSettings] = useState<Settings>(loadSettings);
+
+  useEffect(() => {
+    saveSettings(settings);
+  }, [settings]);
   // Whichever view is mounted (Overview or SingleTrack) registers its own
   // CSV-export logic here, since it depends on data computed inside that
   // view - the sidebar just calls whatever's currently registered.
