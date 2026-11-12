@@ -52,19 +52,22 @@ export const basePlotConfig: Partial<Config> = {
   responsive: true,
 };
 
-export function baseLayout(title: string, overrides: Partial<Layout> = {}): Partial<Layout> {
+/** `dark` swaps the usual white/black theme for a dark one - used by the
+ * Overview panels when Settings.darkMode is on (see OverviewView.tsx). */
+export function baseLayout(title: string, overrides: Partial<Layout> = {}, dark = false): Partial<Layout> {
   return {
-    title: { text: title, font: { size: 12 } },
-    font: { size: 10, color: "#333" },
+    title: { text: title, font: { size: 12, color: dark ? "#eee" : undefined } },
+    font: { size: 10, color: dark ? "#ccc" : "#333" },
     margin: { l: 44, r: 20, t: 28, b: 36 },
-    paper_bgcolor: "white",
-    plot_bgcolor: "white",
+    paper_bgcolor: dark ? "#1e1e1e" : "white",
+    plot_bgcolor: dark ? "#1e1e1e" : "white",
     showlegend: false,
     ...overrides,
   };
 }
 
 export const gridColor = "#e0e0e0";
+export const gridColorDark = "#444";
 
 /** The ROI circle (grey, solid) plus, when Max ROI% is on, a second dashed
  * circle marking the smaller inclusion zone it actually filters to -

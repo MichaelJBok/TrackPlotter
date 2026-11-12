@@ -4,7 +4,7 @@ import { backgroundImageTag, loadBackgroundImage } from "./lib/backgroundImage";
 import { collectFiles, directoryPickerSupported } from "./lib/directoryPicker";
 import { exportAllVisiblePlots } from "./lib/plotDefaults";
 import { loadSettings, saveSettings } from "./lib/settingsStorage";
-import { type BackgroundImage, type Settings } from "./lib/types";
+import { type BackgroundImage, type CoreSettings, type Settings } from "./lib/types";
 import OverviewView from "./components/OverviewView";
 import SingleTrackView from "./components/SingleTrackView";
 import ListBox from "./components/ListBox";
@@ -33,6 +33,11 @@ export default function App() {
   const folderInputRef = useRef<HTMLInputElement>(null);
   const [selection, setSelection] = useState<string>(OVERVIEW);
   const [settings, setSettings] = useState<Settings>(loadSettings);
+  // FPS/Px scale/Min speed/Max ROI%/Color depend on the video, not the
+  // viewer, so each experiment can override them; everything else in
+  // `settings` stays global. Not persisted - tied to this session's loaded
+  // experiments, like the data itself.
+  const [coreOverrides, setCoreOverrides] = useState<Record<string, CoreSettings>>({});
 
   useEffect(() => {
     saveSettings(settings);
@@ -53,6 +58,35 @@ export default function App() {
   const hasOverview = (data?.trackLabels.length ?? 0) > 0; // always show it, single- or multi-individual
   const uploadedNames = Object.keys(uploadedFiles);
   const bgImage = activeFile ? backgroundImages[experimentTag(activeFile)] : undefined;
+
+  // What the active experiment actually sees: global settings, with its own
+  // FPS/Px scale/Min speed/Max ROI%/Color override layered on top, if any.
+  const effectiveSettings: Settings = {
+    ...settings,
+    ...(activeFile ? coreOverrides[activeFile] : undefined),
+  };
+
+  function updateCoreSetting(patch: Partial<CoreSettings>) {
+    if (!activeFile) {
+      setSettings((s) => ({ ...s, ...patch }));
+      return;
+    }
+    const { fps, pxScale, minSpeed, roiFilterPct, colorMode } = effectiveSettings;
+    setCoreOverrides((prev) => ({
+      ...prev,
+      [activeFile]: { fps, pxScale, minSpeed, roiFilterPct, colorMode, ...patch },
+    }));
+  }
+
+  function updateGlobalSetting(patch: Partial<Settings>) {
+    setSettings((s) => ({ ...s, ...patch }));
+  }
+
+  function handleApplyToAll() {
+    const { fps, pxScale, minSpeed, roiFilterPct, colorMode } = effectiveSettings;
+    const core: CoreSettings = { fps, pxScale, minSpeed, roiFilterPct, colorMode };
+    setCoreOverrides(Object.fromEntries(uploadedNames.map((name) => [name, core])));
+  }
 
   function handleFileChange(name: string) {
     setActiveFile(name);
@@ -273,7 +307,13 @@ export default function App() {
           )}
         </section>
 
-        <SettingsBar settings={settings} onChange={setSettings} />
+        <SettingsBar
+          settings={effectiveSettings}
+          onChangeGlobal={updateGlobalSetting}
+          onChangeCore={updateCoreSetting}
+          onApplyToAll={handleApplyToAll}
+          canApplyToAll={uploadedNames.length > 1}
+        />
 
         <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <SectionLabel>Export</SectionLabel>
@@ -321,13 +361,18 @@ export default function App() {
         ) : selection === OVERVIEW ? (
           <OverviewView
             data={data}
-            settings={settings}
+            settings={effectiveSettings}
             onJumpToTrack={setSelection}
             bgImage={bgImage}
             registerCsvExport={registerCsvExport}
           />
         ) : (
-          <SingleTrackView data={data} label={selection} settings={settings} registerCsvExport={registerCsvExport} />
+          <SingleTrackView
+            data={data}
+            label={selection}
+            settings={effectiveSettings}
+            registerCsvExport={registerCsvExport}
+          />
         )}
       </main>
     </div>
@@ -350,17 +395,51 @@ const fieldRow: React.CSSProperties = {
 };
 const numberInput: React.CSSProperties = { width: 60 };
 
-function SettingsBar({ settings, onChange }: { settings: Settings; onChange: (s: Settings) => void }) {
+function SettingsBar({
+  settings, onChangeGlobal, onChangeCore, onApplyToAll, canApplyToAll,
+}: {
+  settings: Settings;
+  onChangeGlobal: (patch: Partial<Settings>) => void;
+  onChangeCore: (patch: Partial<CoreSettings>) => void;
+  onApplyToAll: () => void;
+  canApplyToAll: boolean;
+}) {
   return (
     <section style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 12 }}>
       <SectionLabel>Settings</SectionLabel>
+      <label style={fieldRow}>
+        Color
+        <select
+          value={settings.colorMode}
+          onChange={(e) => onChangeCore({ colorMode: e.target.value as Settings["colorMode"] })}
+        >
+          <option value="time">time</option>
+          <option value="speed">speed</option>
+        </select>
+      </label>
+      <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <input
+          type="checkbox"
+          checked={settings.darkMode}
+          onChange={(e) => onChangeGlobal({ darkMode: e.target.checked })}
+        />
+        Dark mode (Overview)
+      </label>
+      <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <input
+          type="checkbox"
+          checked={settings.colorBlindMode}
+          onChange={(e) => onChangeGlobal({ colorBlindMode: e.target.checked })}
+        />
+        Colorblind mode (Overview)
+      </label>
       <label style={fieldRow}>
         FPS
         <input
           type="number"
           value={settings.fps}
           style={numberInput}
-          onChange={(e) => onChange({ ...settings, fps: Number(e.target.value) || 1 })}
+          onChange={(e) => onChangeCore({ fps: Number(e.target.value) || 1 })}
         />
       </label>
       <label style={fieldRow}>
@@ -370,7 +449,7 @@ function SettingsBar({ settings, onChange }: { settings: Settings; onChange: (s:
           step="0.01"
           value={settings.pxScale}
           style={numberInput}
-          onChange={(e) => onChange({ ...settings, pxScale: Number(e.target.value) || 1 })}
+          onChange={(e) => onChangeCore({ pxScale: Number(e.target.value) || 1 })}
         />
       </label>
       <label style={fieldRow}>
@@ -379,7 +458,7 @@ function SettingsBar({ settings, onChange }: { settings: Settings; onChange: (s:
           type="number"
           value={settings.minSpeed}
           style={numberInput}
-          onChange={(e) => onChange({ ...settings, minSpeed: Number(e.target.value) || 0 })}
+          onChange={(e) => onChangeCore({ minSpeed: Number(e.target.value) || 0 })}
         />
       </label>
       <label style={fieldRow}>
@@ -388,23 +467,31 @@ function SettingsBar({ settings, onChange }: { settings: Settings; onChange: (s:
           type="number"
           value={settings.roiFilterPct}
           style={numberInput}
-          onChange={(e) => onChange({ ...settings, roiFilterPct: Number(e.target.value) || 0 })}
+          onChange={(e) => onChangeCore({ roiFilterPct: Number(e.target.value) || 0 })}
         />
       </label>
+      <button
+        type="button"
+        disabled={!canApplyToAll}
+        title="Copy Color/FPS/Px scale/Min speed/Max ROI% from this experiment to every other loaded experiment"
+        onClick={onApplyToAll}
+      >
+        Apply to all experiments
+      </button>
       <label style={fieldRow}>
         Pol angle
         <input
           type="number"
           value={settings.polAngle}
           style={numberInput}
-          onChange={(e) => onChange({ ...settings, polAngle: Number(e.target.value) || 0 })}
+          onChange={(e) => onChangeGlobal({ polAngle: Number(e.target.value) || 0 })}
         />
       </label>
       <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <input
           type="checkbox"
           checked={settings.showPolLine}
-          onChange={(e) => onChange({ ...settings, showPolLine: e.target.checked })}
+          onChange={(e) => onChangeGlobal({ showPolLine: e.target.checked })}
         />
         Show pol line
       </label>
@@ -413,7 +500,7 @@ function SettingsBar({ settings, onChange }: { settings: Settings; onChange: (s:
           <input
             type="checkbox"
             checked={settings.timeCutSec != null}
-            onChange={(e) => onChange({ ...settings, timeCutSec: e.target.checked ? 0 : null })}
+            onChange={(e) => onChangeGlobal({ timeCutSec: e.target.checked ? 0 : null })}
           />
           Time cut (s)
         </span>
@@ -422,14 +509,14 @@ function SettingsBar({ settings, onChange }: { settings: Settings; onChange: (s:
           disabled={settings.timeCutSec == null}
           value={settings.timeCutSec ?? 0}
           style={numberInput}
-          onChange={(e) => onChange({ ...settings, timeCutSec: Number(e.target.value) || 0 })}
+          onChange={(e) => onChangeGlobal({ timeCutSec: Number(e.target.value) || 0 })}
         />
       </label>
       <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <input
           type="checkbox"
           checked={settings.lockSpeedAxis}
-          onChange={(e) => onChange({ ...settings, lockSpeedAxis: e.target.checked })}
+          onChange={(e) => onChangeGlobal({ lockSpeedAxis: e.target.checked })}
         />
         Lock speed axis
       </label>
@@ -442,26 +529,16 @@ function SettingsBar({ settings, onChange }: { settings: Settings; onChange: (s:
           disabled={!settings.lockSpeedAxis}
           value={settings.speedPercentile}
           style={numberInput}
-          onChange={(e) => onChange({ ...settings, speedPercentile: Number(e.target.value) || 95 })}
+          onChange={(e) => onChangeGlobal({ speedPercentile: Number(e.target.value) || 95 })}
         />
       </label>
       <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <input
           type="checkbox"
           checked={settings.lockHistAxis}
-          onChange={(e) => onChange({ ...settings, lockHistAxis: e.target.checked })}
+          onChange={(e) => onChangeGlobal({ lockHistAxis: e.target.checked })}
         />
         Lock hist Y axis
-      </label>
-      <label style={fieldRow}>
-        Color
-        <select
-          value={settings.colorMode}
-          onChange={(e) => onChange({ ...settings, colorMode: e.target.value as Settings["colorMode"] })}
-        >
-          <option value="time">time</option>
-          <option value="speed">speed</option>
-        </select>
       </label>
     </section>
   );

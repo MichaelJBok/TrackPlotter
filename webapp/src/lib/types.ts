@@ -23,6 +23,10 @@ export interface Settings {
   /** Locks the count (y) axis of Speed Distribution and Direction (axial)
    * to the tallest bin across every track in the file. */
   lockHistAxis: boolean;
+  /** Dark theme and a colorblind-safe palette, both scoped to the Overview
+   * (XY overlay, polar, bar panels) only. */
+  darkMode: boolean;
+  colorBlindMode: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -37,7 +41,15 @@ export const DEFAULT_SETTINGS: Settings = {
   lockSpeedAxis: false,
   speedPercentile: 95,
   lockHistAxis: false,
+  darkMode: false,
+  colorBlindMode: false,
 };
+
+/** The subset of Settings that makes sense to tune per-experiment (frame
+ * rate, physical scale, and filtering/display depend on the video, not the
+ * viewer) - overridable per experiment in App.tsx, with an "Apply to all"
+ * button to broadcast one experiment's values to every other loaded one. */
+export type CoreSettings = Pick<Settings, "fps" | "pxScale" | "minSpeed" | "roiFilterPct" | "colorMode">;
 
 /** A loaded video-frame background for the Overview XY plot, in the same
  * pixel coordinate system as the tracks (origin top-left). */

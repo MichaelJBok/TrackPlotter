@@ -10,6 +10,16 @@ const BASE12 = [
   "#8b5e34", "#607d8b", "#c71585", "#556b2f",
 ];
 
-export function colorForIndex(i: number): string {
-  return BASE12[i % BASE12.length];
+// Okabe-Ito (2008) - the standard reference colorblind-safe palette, used
+// when "Colorblind mode" is on instead of BASE12. The first 8 are the
+// canonical set; 9-12 extend it the same way BASE12 does.
+const COLORBLIND12 = [
+  "#E69F00", "#56B4E9", "#009E73", "#F0E442",
+  "#0072B2", "#D55E00", "#CC79A7", "#000000",
+  "#999999", "#44AA99", "#882255", "#117733",
+];
+
+export function colorForIndex(i: number, colorBlind = false): string {
+  const palette = colorBlind ? COLORBLIND12 : BASE12;
+  return palette[i % palette.length];
 }

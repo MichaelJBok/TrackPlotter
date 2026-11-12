@@ -3,7 +3,7 @@ import Plot from "react-plotly.js";
 import type { BackgroundImage, TracksData, Settings, TrackStats } from "../lib/types";
 import { applyFilters, computeTrackStats } from "../lib/analysis";
 import { colorForIndex } from "../lib/palette";
-import { basePlotConfig, baseLayout, gridColor, roiShapes } from "../lib/plotDefaults";
+import { basePlotConfig, baseLayout, gridColor, gridColorDark, roiShapes } from "../lib/plotDefaults";
 import { downloadCsv } from "../lib/exportCsv";
 
 interface Props {
@@ -16,8 +16,10 @@ interface Props {
 
 /** Multi-individual overview: XY overlay (+ optional background image), per-
  * individual distance/speed bars, and a direction polar plot. Clicking any
- * track/bar/point jumps to that individual's single-track view. */
+ * track/bar/point jumps to that individual's single-track view. Dark mode
+ * and the colorblind-safe palette are both scoped to this view only. */
 export default function OverviewView({ data, settings, onJumpToTrack, bgImage, registerCsvExport }: Props) {
+  const { darkMode: dark, colorBlindMode: cb } = settings;
   const stats: TrackStats[] = data.trackLabels.map((label) => {
     const raw = data.tracks[label];
     const { x, y } = applyFilters(raw.x, raw.y, data.roi, settings);
@@ -49,37 +51,38 @@ export default function OverviewView({ data, settings, onJumpToTrack, bgImage, r
   }, [stats]);
 
   return (
-    <>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1.6fr 1fr",
-          gridTemplateRows: "420px 300px",
-          gap: 10,
-        }}
-      >
-        <div style={{ gridColumn: "1", gridRow: "1 / span 2" }}>
-          <XYOverlayPanel data={data} settings={settings} bgImage={bgImage} onClick={handlePlotlyClick} />
-        </div>
-        <div style={{ gridColumn: "2", gridRow: "1" }}>
-          <DirectionPolarPanel stats={stats} onClick={handlePlotlyClick} />
-        </div>
-        <div style={{ gridColumn: "2", gridRow: "2", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          <BarPanel title="Distance" stats={stats} valueOf={(s) => s.totalDist} unit="px" onClick={handlePlotlyClick} />
-          <BarPanel title="Speed" stats={stats} valueOf={(s) => s.meanSpeed} unit="px/s" onClick={handlePlotlyClick} />
-        </div>
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "1.6fr 1fr",
+        gridTemplateRows: "420px 300px",
+        gap: 10,
+        background: dark ? "#141414" : undefined,
+        padding: dark ? 10 : 0,
+        borderRadius: dark ? 6 : 0,
+      }}
+    >
+      <div style={{ gridColumn: "1", gridRow: "1 / span 2" }}>
+        <XYOverlayPanel data={data} settings={settings} bgImage={bgImage} dark={dark} cb={cb} onClick={handlePlotlyClick} />
       </div>
-    </>
+      <div style={{ gridColumn: "2", gridRow: "1" }}>
+        <DirectionPolarPanel stats={stats} dark={dark} cb={cb} onClick={handlePlotlyClick} />
+      </div>
+      <div style={{ gridColumn: "2", gridRow: "2", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <BarPanel title="Distance" stats={stats} valueOf={(s) => s.totalDist} unit="px" dark={dark} cb={cb} onClick={handlePlotlyClick} />
+        <BarPanel title="Speed" stats={stats} valueOf={(s) => s.meanSpeed} unit="px/s" dark={dark} cb={cb} onClick={handlePlotlyClick} />
+      </div>
+    </div>
   );
 }
 
 function XYOverlayPanel({
-  data, settings, bgImage, onClick,
-}: { data: TracksData; settings: Settings; bgImage?: BackgroundImage; onClick: (e: any) => void }) {
+  data, settings, bgImage, dark, cb, onClick,
+}: { data: TracksData; settings: Settings; bgImage?: BackgroundImage; dark: boolean; cb: boolean; onClick: (e: any) => void }) {
   const traces = data.trackLabels.map((label, i) => {
     const raw = data.tracks[label];
     const { x, y } = applyFilters(raw.x, raw.y, data.roi, settings);
-    const color = colorForIndex(i);
+    const color = colorForIndex(i, cb);
     return {
       x,
       y,
@@ -114,14 +117,23 @@ function XYOverlayPanel({
   return (
     <Plot
       data={traces}
-      layout={baseLayout("All individuals — XY tracks", {
-        xaxis: { title: { text: "X (px)" }, gridcolor: gridColor },
-        yaxis: { title: { text: "Y (px)" }, gridcolor: gridColor, autorange: "reversed", scaleanchor: "x" },
-        shapes,
-        images,
-        showlegend: true,
-        legend: { font: { size: 9 } },
-      })}
+      layout={baseLayout(
+        "All individuals — XY tracks",
+        {
+          xaxis: { title: { text: "X (px)" }, gridcolor: dark ? gridColorDark : gridColor },
+          yaxis: {
+            title: { text: "Y (px)" },
+            gridcolor: dark ? gridColorDark : gridColor,
+            autorange: "reversed",
+            scaleanchor: "x",
+          },
+          shapes,
+          images,
+          showlegend: true,
+          legend: { font: { size: 9 } },
+        },
+        dark,
+      )}
       config={basePlotConfig}
       style={{ width: "100%", height: "100%" }}
       useResizeHandler
@@ -130,11 +142,13 @@ function XYOverlayPanel({
   );
 }
 
-function DirectionPolarPanel({ stats, onClick }: { stats: TrackStats[]; onClick: (e: any) => void }) {
+function DirectionPolarPanel({
+  stats, dark, cb, onClick,
+}: { stats: TrackStats[]; dark: boolean; cb: boolean; onClick: (e: any) => void }) {
   const traces = stats
     .map((s, i) => {
       if (!Number.isFinite(s.meanAxialDirDeg) || !Number.isFinite(s.vectorR)) return null;
-      const color = colorForIndex(i);
+      const color = colorForIndex(i, cb);
       // Axial: plot the direction and its 180-flip, joined through the
       // center, since a direction and its mirror are the same axis.
       return {
@@ -152,19 +166,24 @@ function DirectionPolarPanel({ stats, onClick }: { stats: TrackStats[]; onClick:
   return (
     <Plot
       data={traces}
-      layout={baseLayout("Direction (R, mean axial angle)", {
-        polar: {
-          radialaxis: { range: [0, 1], showticklabels: false, ticks: "" },
-          angularaxis: {
-            direction: "clockwise",
-            rotation: 0,
-            tickvals: [0, 90, 180, 270],
-            ticktext: ["0°", "90°", "180°", "-90°"],
+      layout={baseLayout(
+        "Direction (R, mean axial angle)",
+        {
+          polar: {
+            radialaxis: { range: [0, 1], showticklabels: false, ticks: "" },
+            angularaxis: {
+              direction: "clockwise",
+              rotation: 0,
+              tickvals: [0, 90, 180, 270],
+              ticktext: ["0°", "90°", "180°", "-90°"],
+              color: dark ? "#ccc" : undefined,
+            },
+            bgcolor: dark ? "#1e1e1e" : "white",
           },
-          bgcolor: "white",
+          showlegend: false,
         },
-        showlegend: false,
-      })}
+        dark,
+      )}
       config={basePlotConfig}
       style={{ width: "100%", height: "100%" }}
       useResizeHandler
@@ -174,24 +193,31 @@ function DirectionPolarPanel({ stats, onClick }: { stats: TrackStats[]; onClick:
 }
 
 function BarPanel({
-  title, stats, valueOf, unit, onClick,
-}: { title: string; stats: TrackStats[]; valueOf: (s: TrackStats) => number; unit: string; onClick: (e: any) => void }) {
+  title, stats, valueOf, unit, dark, cb, onClick,
+}: {
+  title: string; stats: TrackStats[]; valueOf: (s: TrackStats) => number; unit: string;
+  dark: boolean; cb: boolean; onClick: (e: any) => void;
+}) {
   const traces = stats.map((s, i) => ({
     x: [s.label],
     y: [Number.isFinite(valueOf(s)) ? valueOf(s) : 0],
     type: "bar" as const,
     name: s.label,
-    marker: { color: colorForIndex(i) },
+    marker: { color: colorForIndex(i, cb) },
     showlegend: false,
   }));
   return (
     <Plot
       data={traces}
-      layout={baseLayout(title, {
-        xaxis: { tickfont: { size: 8 }, tickangle: -45 },
-        yaxis: { title: { text: unit }, gridcolor: gridColor },
-        margin: { l: 44, r: 10, t: 28, b: 50 },
-      })}
+      layout={baseLayout(
+        title,
+        {
+          xaxis: { tickfont: { size: 8 }, tickangle: -45 },
+          yaxis: { title: { text: unit }, gridcolor: dark ? gridColorDark : gridColor },
+          margin: { l: 44, r: 10, t: 28, b: 50 },
+        },
+        dark,
+      )}
       config={basePlotConfig}
       style={{ width: "100%", height: "100%" }}
       useResizeHandler
