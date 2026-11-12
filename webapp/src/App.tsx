@@ -413,6 +413,45 @@ function parseLocaleNumber(raw: string): number {
   return Number(raw.replace(",", "."));
 }
 
+/** A number field that tracks what you're literally typing, instead of
+ * snapping back to the parsed number on every keystroke - a plain
+ * `<input value={aNumber} onChange={...parse...}>` re-renders with
+ * `value` already rounded to the parsed number, which erases a trailing
+ * "." or "," (and the digits after it never get a chance to land) before
+ * you can type the next character. Only resyncs its own displayed text
+ * from `value` when something *else* changed it (switching experiments,
+ * Apply to all, ...), not as a result of its own onChange. */
+function DecimalField({
+  value, onChange, fallback, style, disabled, title,
+}: {
+  value: number; onChange: (n: number) => void; fallback: number;
+  style?: React.CSSProperties; disabled?: boolean; title?: string;
+}) {
+  const [text, setText] = useState(String(value));
+
+  useEffect(() => {
+    if (parseLocaleNumber(text) !== value) setText(String(value));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={text}
+      disabled={disabled}
+      title={title}
+      style={style}
+      onChange={(e) => {
+        const raw = e.target.value;
+        setText(raw);
+        const n = parseLocaleNumber(raw);
+        if (Number.isFinite(n)) onChange(n || fallback);
+      }}
+    />
+  );
+}
+
 function SettingsBar({
   settings, onChangeGlobal, onChangeCore, onApplyToAll, canApplyToAll, roiPixelDiam,
 }: {
@@ -454,23 +493,21 @@ function SettingsBar({
       </label>
       <label style={fieldRow}>
         FPS
-        <input
-          type="text"
-          inputMode="decimal"
+        <DecimalField
           value={settings.fps}
+          fallback={1}
           style={numberInput}
-          onChange={(e) => onChangeCore({ fps: parseLocaleNumber(e.target.value) || 1 })}
+          onChange={(fps) => onChangeCore({ fps })}
         />
       </label>
       <label style={fieldRow}>
         ROI diameter (cm)
-        <input
-          type="text"
-          inputMode="decimal"
-          title="Real-world diameter of the ROI, in cm - 0 stays in px"
+        <DecimalField
           value={settings.roiDiameterReal}
+          fallback={0}
+          title="Real-world diameter of the ROI, in cm - 0 stays in px"
           style={numberInput}
-          onChange={(e) => onChangeCore({ roiDiameterReal: parseLocaleNumber(e.target.value) || 0 })}
+          onChange={(roiDiameterReal) => onChangeCore({ roiDiameterReal })}
         />
       </label>
       {roiPixelDiam != null && (
@@ -482,22 +519,20 @@ function SettingsBar({
       )}
       <label style={fieldRow}>
         Min speed
-        <input
-          type="text"
-          inputMode="decimal"
+        <DecimalField
           value={settings.minSpeed}
+          fallback={0}
           style={numberInput}
-          onChange={(e) => onChangeCore({ minSpeed: parseLocaleNumber(e.target.value) || 0 })}
+          onChange={(minSpeed) => onChangeCore({ minSpeed })}
         />
       </label>
       <label style={fieldRow}>
         Max ROI%
-        <input
-          type="text"
-          inputMode="decimal"
+        <DecimalField
           value={settings.roiFilterPct}
+          fallback={0}
           style={numberInput}
-          onChange={(e) => onChangeCore({ roiFilterPct: parseLocaleNumber(e.target.value) || 0 })}
+          onChange={(roiFilterPct) => onChangeCore({ roiFilterPct })}
         />
       </label>
       <button
@@ -510,12 +545,11 @@ function SettingsBar({
       </button>
       <label style={fieldRow}>
         Pol angle
-        <input
-          type="text"
-          inputMode="decimal"
+        <DecimalField
           value={settings.polAngle}
+          fallback={0}
           style={numberInput}
-          onChange={(e) => onChangeGlobal({ polAngle: parseLocaleNumber(e.target.value) || 0 })}
+          onChange={(polAngle) => onChangeGlobal({ polAngle })}
         />
       </label>
       <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -535,13 +569,12 @@ function SettingsBar({
           />
           Time cut (s)
         </span>
-        <input
-          type="text"
-          inputMode="decimal"
-          disabled={settings.timeCutSec == null}
+        <DecimalField
           value={settings.timeCutSec ?? 0}
+          fallback={0}
+          disabled={settings.timeCutSec == null}
           style={numberInput}
-          onChange={(e) => onChangeGlobal({ timeCutSec: parseLocaleNumber(e.target.value) || 0 })}
+          onChange={(timeCutSec) => onChangeGlobal({ timeCutSec })}
         />
       </label>
       <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -554,13 +587,12 @@ function SettingsBar({
       </label>
       <label style={fieldRow}>
         Speed pctile
-        <input
-          type="text"
-          inputMode="decimal"
-          disabled={!settings.lockSpeedAxis}
+        <DecimalField
           value={settings.speedPercentile}
+          fallback={95}
+          disabled={!settings.lockSpeedAxis}
           style={numberInput}
-          onChange={(e) => onChangeGlobal({ speedPercentile: parseLocaleNumber(e.target.value) || 95 })}
+          onChange={(speedPercentile) => onChangeGlobal({ speedPercentile })}
         />
       </label>
       <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
