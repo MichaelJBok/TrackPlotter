@@ -86,13 +86,18 @@ function XYOverlayPanel({
   data: TracksData; settings: Settings; bgImage?: BackgroundImage; dark: boolean; cb: boolean;
   onClick: (e: any) => void;
 }) {
+  // Positions are scaled to cm (pxScale) right at the point of plotting -
+  // the ROI shapes and background image below get the same scale, so
+  // everything spatial stays aligned; every other computation in this app
+  // (speed, distance, ...) works from the raw, unscaled x/y.
+  const unit = settings.pxScale !== 1 ? "cm" : "px";
   const traces = data.trackLabels.map((label, i) => {
     const raw = data.tracks[label];
     const { x, y } = applyFilters(raw.x, raw.y, data.roi, settings);
     const color = colorForIndex(i, cb);
     return {
-      x,
-      y,
+      x: x.map((v) => v * settings.pxScale),
+      y: y.map((v) => v * settings.pxScale),
       type: "scattergl" as const,
       mode: "lines+markers" as const,
       name: label,
@@ -101,7 +106,7 @@ function XYOverlayPanel({
     };
   });
 
-  const shapes = roiShapes(data.roi, settings.roiFilterPct);
+  const shapes = roiShapes(data.roi, settings.roiFilterPct, settings.pxScale);
 
   const images = bgImage
     ? [
@@ -111,8 +116,8 @@ function XYOverlayPanel({
           yref: "y" as const,
           x: 0,
           y: 0,
-          sizex: bgImage.width,
-          sizey: bgImage.height,
+          sizex: bgImage.width * settings.pxScale,
+          sizey: bgImage.height * settings.pxScale,
           xanchor: "left" as const,
           yanchor: "top" as const,
           sizing: "stretch" as const,
@@ -127,12 +132,9 @@ function XYOverlayPanel({
       layout={baseLayout(
         "All individuals — XY tracks",
         {
-          // The plotted x/y are always raw pixel coords (so the ROI circle
-          // and background image, which are also in raw px, stay aligned) -
-          // only the derived distance/speed numbers get unit-converted.
-          xaxis: { title: { text: "X (px)" }, gridcolor: dark ? gridColorDark : gridColor },
+          xaxis: { title: { text: `X (${unit})` }, gridcolor: dark ? gridColorDark : gridColor },
           yaxis: {
-            title: { text: "Y (px)" },
+            title: { text: `Y (${unit})` },
             gridcolor: dark ? gridColorDark : gridColor,
             autorange: "reversed",
             scaleanchor: "x",

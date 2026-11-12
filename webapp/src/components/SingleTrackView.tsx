@@ -146,7 +146,7 @@ export default function SingleTrackView({ data, label, settings, registerCsvExpo
       }}
     >
       <div style={{ gridColumn: "1", gridRow: "1" }}>
-        <TrackPanel x={x} y={y} roi={data.roi} roiFilterPct={settings.roiFilterPct} colorVals={trackColorVals}
+        <TrackPanel x={x} y={y} roi={data.roi} roiFilterPct={settings.roiFilterPct} pxScale={settings.pxScale} colorVals={trackColorVals}
           pathStats={path} selectedFrame={selectedFrame} onSelectFrame={setSelectedFrame} dark={dark} unit={unit} />
       </div>
       <div
@@ -180,22 +180,28 @@ export default function SingleTrackView({ data, label, settings, registerCsvExpo
 }
 
 function TrackPanel({
-  x, y, roi, roiFilterPct, colorVals, pathStats, selectedFrame, onSelectFrame, dark, unit,
+  x, y, roi, roiFilterPct, pxScale, colorVals, pathStats, selectedFrame, onSelectFrame, dark, unit,
 }: {
-  x: number[]; y: number[]; roi: TracksData["roi"]; roiFilterPct: number;
+  x: number[]; y: number[]; roi: TracksData["roi"]; roiFilterPct: number; pxScale: number;
   colorVals: number[];
   pathStats: { straightness: number; meanAbsTurnDeg: number; netDisp: number };
   selectedFrame: number | null; onSelectFrame: (frame: number) => void; dark: boolean; unit: string;
 }) {
-  const shapes = roiShapes(roi, roiFilterPct);
+  // Scaled to cm (pxScale) right at the point of plotting, same as the ROI
+  // shapes below - every other computation here works from raw, unscaled
+  // x/y (computeFrameSeries/computePathStats already apply pxScale
+  // themselves for the derived speed/distance numbers).
+  const xPlot = x.map((v) => v * pxScale);
+  const yPlot = y.map((v) => v * pxScale);
+  const shapes = roiShapes(roi, roiFilterPct, pxScale);
   const subtitle = Number.isFinite(pathStats.straightness)
     ? `SI=${pathStats.straightness.toFixed(2)} | turn=${pathStats.meanAbsTurnDeg.toFixed(1)}° | disp=${pathStats.netDisp.toFixed(0)}${unit}`
     : "";
   // Track_X/Y rows are 0-indexed; the shared "frame" numbering elsewhere in
   // this view is 1-based (row i == frame i+1), so convert both ways here.
   const highlightIdx = selectedFrame != null ? selectedFrame - 1 : -1;
-  const hasHighlight = highlightIdx >= 0 && highlightIdx < x.length
-    && Number.isFinite(x[highlightIdx]) && Number.isFinite(y[highlightIdx]);
+  const hasHighlight = highlightIdx >= 0 && highlightIdx < xPlot.length
+    && Number.isFinite(xPlot[highlightIdx]) && Number.isFinite(yPlot[highlightIdx]);
 
   const handleClick = (e: Readonly<{ points: ReadonlyArray<{ pointIndex?: number }> }>) => {
     const idx = e.points?.[0]?.pointIndex;
@@ -206,8 +212,8 @@ function TrackPanel({
     <Plot
       data={[
         {
-          x,
-          y,
+          x: xPlot,
+          y: yPlot,
           type: "scattergl",
           mode: "markers",
           marker: { size: 5, color: colorVals, colorscale: PARULA_COLORSCALE },
@@ -216,8 +222,8 @@ function TrackPanel({
         ...(hasHighlight
           ? [
               {
-                x: [x[highlightIdx]],
-                y: [y[highlightIdx]],
+                x: [xPlot[highlightIdx]],
+                y: [yPlot[highlightIdx]],
                 type: "scattergl" as const, // same canvas as the main trace, so it draws on top of it
                 mode: "markers" as const,
                 marker: { size: 12, color: "#e02424", line: { color: "white", width: 1.5 } },
@@ -230,12 +236,9 @@ function TrackPanel({
       layout={baseLayout(
         `Track${subtitle ? `<br><span style="font-size:9px">${subtitle}</span>` : ""}`,
         {
-          // The plotted x/y are always raw pixel coords (so the ROI circle
-          // stays aligned) - only the derived disp (above) and distance/
-          // speed panels get unit-converted.
-          xaxis: { title: { text: "X (px)" }, gridcolor: dark ? gridColorDark : gridColor },
+          xaxis: { title: { text: `X (${unit})` }, gridcolor: dark ? gridColorDark : gridColor },
           yaxis: {
-            title: { text: "Y (px)" },
+            title: { text: `Y (${unit})` },
             gridcolor: dark ? gridColorDark : gridColor,
             autorange: "reversed",
             scaleanchor: "x",

@@ -73,34 +73,40 @@ export const gridColorDark = "#444";
  * circle marking the smaller inclusion zone it actually filters to -
  * applyFilters() in analysis.ts drops any point farther than this radius
  * from the ROI center. Shared by the Overview XY plot and the single-track
- * Track panel so both stay in sync when the setting changes. */
+ * Track panel so both stay in sync when the setting changes. `scale`
+ * (pxScale) keeps this aligned when the plotted track positions themselves
+ * are scaled to cm instead of left in raw px. */
 export function roiShapes(
   roi: { cx: number; cy: number; diam: number } | null,
   roiFilterPct: number,
+  scale = 1,
 ): NonNullable<Layout["shapes"]> {
   if (!roi) return [];
+  const cx = roi.cx * scale;
+  const cy = roi.cy * scale;
+  const diam = roi.diam * scale;
   const shapes: NonNullable<Layout["shapes"]> = [
     {
       type: "circle",
       xref: "x",
       yref: "y",
-      x0: roi.cx - roi.diam / 2,
-      x1: roi.cx + roi.diam / 2,
-      y0: roi.cy - roi.diam / 2,
-      y1: roi.cy + roi.diam / 2,
+      x0: cx - diam / 2,
+      x1: cx + diam / 2,
+      y0: cy - diam / 2,
+      y1: cy + diam / 2,
       line: { color: "#ccc", width: 1.5 },
     },
   ];
   if (roiFilterPct > 0) {
-    const r = (roi.diam / 2) * (roiFilterPct / 100);
+    const r = (diam / 2) * (roiFilterPct / 100);
     shapes.push({
       type: "circle",
       xref: "x",
       yref: "y",
-      x0: roi.cx - r,
-      x1: roi.cx + r,
-      y0: roi.cy - r,
-      y1: roi.cy + r,
+      x0: cx - r,
+      x1: cx + r,
+      y0: cy - r,
+      y1: cy + r,
       line: { color: "#e07b00", width: 1.5, dash: "dash" },
     });
   }

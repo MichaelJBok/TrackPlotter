@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { parseTracksCsv } from "./lib/parseCsv";
+import { applyFilters, computeTrackStats } from "./lib/analysis";
 import { backgroundImageTag, loadBackgroundImage } from "./lib/backgroundImage";
 import { collectFiles, directoryPickerSupported } from "./lib/directoryPicker";
+import { downloadCsv } from "./lib/exportCsv";
 import { exportAllVisiblePlots } from "./lib/plotDefaults";
 import { loadSettings, saveSettings } from "./lib/settingsStorage";
 import { type BackgroundImage, type CoreSettings, type Settings } from "./lib/types";
@@ -195,6 +197,36 @@ export default function App() {
     }
   }
 
+  /** One CSV with every track's stats from every loaded experiment, each
+   * computed with that experiment's own effective settings (its core
+   * override, if any, and pxScale derived from its own ROI) - not just
+   * whichever experiment happens to be active right now. */
+  function handleExportAllStats() {
+    const header = [
+      "Experiment", "Label", "N_valid", "TotalDist_px", "MeanSpeed_px_s", "MedianSpeed_px_s",
+      "Straightness", "MeanAbsTurn_deg", "NetDisp_px", "MeanAxialDir_deg", "VectorR",
+    ];
+    const rows: Array<Array<string | number>> = [];
+    for (const name of uploadedNames) {
+      const expData = parseTracksCsv(uploadedFiles[name]);
+      const core: Settings = { ...settings, ...(coreOverrides[name] ?? undefined) };
+      const pxScale = core.roiDiameterReal > 0 && expData.roi?.diam
+        ? core.roiDiameterReal / expData.roi.diam
+        : 1;
+      const expSettings: Settings = { ...core, pxScale };
+      for (const label of expData.trackLabels) {
+        const raw = expData.tracks[label];
+        const { x, y } = applyFilters(raw.x, raw.y, expData.roi, expSettings);
+        const s = computeTrackStats(label, x, y, expSettings);
+        rows.push([
+          name, s.label, s.nValid, s.totalDist, s.meanSpeed, s.medianSpeed,
+          s.straightness, s.meanAbsTurnDeg, s.netDisp, s.meanAxialDirDeg, s.vectorR,
+        ]);
+      }
+    }
+    downloadCsv("all_experiments_track_stats.csv", header, rows);
+  }
+
   return (
     <div className={dark ? "dark" : undefined} style={{ display: "flex", height: "100vh" }}>
       <aside
@@ -308,6 +340,15 @@ export default function App() {
             onClick={() => handleExportFigures("pdf")}
           >
             Export figures (PDF)
+          </button>
+          <button
+            type="button"
+            style={{ fontSize: 12 }}
+            disabled={uploadedNames.length === 0}
+            title="One CSV with every track's stats from every loaded experiment"
+            onClick={handleExportAllStats}
+          >
+            Export all stats (CSV)
           </button>
         </section>
       </aside>
