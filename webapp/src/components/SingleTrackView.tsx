@@ -521,6 +521,9 @@ function DirectionRosePanel({
           annotations: polAngle
             ? [{ text: `pol=${polAngle}°`, showarrow: false, x: 0.5, y: -0.08, xref: "paper", yref: "paper", font: { size: 9 } }]
             : [],
+          // Extra headroom so the title doesn't sit on top of the polar
+          // chart's own "90°" tick label just below it.
+          margin: { l: 44, r: 20, t: 42, b: 36 },
         },
         dark,
       )}
