@@ -33,8 +33,8 @@ export default function App() {
   const folderInputRef = useRef<HTMLInputElement>(null);
   const [selection, setSelection] = useState<string>(OVERVIEW);
   const [settings, setSettings] = useState<Settings>(loadSettings);
-  // FPS/ROI diameter/Min speed/Max ROI%/Color depend on the video, not the
-  // viewer, so each experiment can override them; everything else in
+  // FPS/ROI diameter/Min speed/Max ROI%/Color/Pol angle depend on the video,
+  // not the viewer, so each experiment can override them; everything else in
   // `settings` stays global. Persisted by filename (unlike the loaded data
   // itself), so re-loading the same folder reattaches these automatically.
   const [coreOverrides, setCoreOverrides] = useState<Record<string, CoreSettings>>(loadCoreOverrides);
@@ -63,9 +63,9 @@ export default function App() {
   const bgImage = activeFile ? backgroundImages[experimentTag(activeFile)] : undefined;
 
   // What the active experiment actually sees: global settings, with its own
-  // FPS/ROI diameter/Min speed/Max ROI%/Color override layered on top, if
-  // any, plus pxScale derived from that ROI diameter - the ROI's real-world
-  // diameter in cm ÷ its pixel diameter (read from the loaded CSV) - instead
+  // FPS/ROI diameter/Min speed/Max ROI%/Color/Pol angle override layered on
+  // top, if any, plus pxScale derived from that ROI diameter - the ROI's
+  // real-world diameter in cm ÷ its pixel diameter (read from the loaded CSV) - instead
   // of asking for a pre-computed px-per-cm ratio.
   const roiPixelDiam = data?.roi?.diam ?? null;
   const mergedCore: Settings = {
@@ -83,10 +83,10 @@ export default function App() {
       setSettings((s) => ({ ...s, ...patch }));
       return;
     }
-    const { fps, roiDiameterReal, minSpeed, roiFilterPct, colorMode } = effectiveSettings;
+    const { fps, roiDiameterReal, minSpeed, roiFilterPct, colorMode, polAngle } = effectiveSettings;
     setCoreOverrides((prev) => ({
       ...prev,
-      [activeFile]: { fps, roiDiameterReal, minSpeed, roiFilterPct, colorMode, ...patch },
+      [activeFile]: { fps, roiDiameterReal, minSpeed, roiFilterPct, colorMode, polAngle, ...patch },
     }));
   }
 
@@ -95,8 +95,8 @@ export default function App() {
   }
 
   function handleApplyToAll() {
-    const { fps, roiDiameterReal, minSpeed, roiFilterPct, colorMode } = effectiveSettings;
-    const core: CoreSettings = { fps, roiDiameterReal, minSpeed, roiFilterPct, colorMode };
+    const { fps, roiDiameterReal, minSpeed, roiFilterPct, colorMode, polAngle } = effectiveSettings;
+    const core: CoreSettings = { fps, roiDiameterReal, minSpeed, roiFilterPct, colorMode, polAngle };
     setCoreOverrides(Object.fromEntries(uploadedNames.map((name) => [name, core])));
   }
 
@@ -535,23 +535,23 @@ function SettingsBar({
           onChange={(roiFilterPct) => onChangeCore({ roiFilterPct })}
         />
       </label>
-      <button
-        type="button"
-        disabled={!canApplyToAll}
-        title="Copy Color/FPS/ROI diameter/Min speed/Max ROI% from this experiment to every other loaded experiment"
-        onClick={onApplyToAll}
-      >
-        Apply to all experiments
-      </button>
       <label style={fieldRow}>
         Pol angle
         <DecimalField
           value={settings.polAngle}
           fallback={0}
           style={numberInput}
-          onChange={(polAngle) => onChangeGlobal({ polAngle })}
+          onChange={(polAngle) => onChangeCore({ polAngle })}
         />
       </label>
+      <button
+        type="button"
+        disabled={!canApplyToAll}
+        title="Copy Color/FPS/ROI diameter/Min speed/Max ROI%/Pol angle from this experiment to every other loaded experiment"
+        onClick={onApplyToAll}
+      >
+        Apply to all experiments
+      </button>
       <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <input
           type="checkbox"

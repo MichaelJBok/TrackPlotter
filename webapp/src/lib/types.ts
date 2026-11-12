@@ -54,10 +54,14 @@ export const DEFAULT_SETTINGS: Settings = {
 };
 
 /** The subset of Settings that makes sense to tune per-experiment (frame
- * rate, physical scale, and filtering/display depend on the video, not the
- * viewer) - overridable per experiment in App.tsx, with an "Apply to all"
- * button to broadcast one experiment's values to every other loaded one. */
-export type CoreSettings = Pick<Settings, "fps" | "roiDiameterReal" | "minSpeed" | "roiFilterPct" | "colorMode">;
+ * rate, physical scale, filtering/display, and the polarization reference
+ * axis all depend on the video/setup, not the viewer) - overridable per
+ * experiment in App.tsx, with an "Apply to all" button to broadcast one
+ * experiment's values to every other loaded one. */
+export type CoreSettings = Pick<
+  Settings,
+  "fps" | "roiDiameterReal" | "minSpeed" | "roiFilterPct" | "colorMode" | "polAngle"
+>;
 
 /** A loaded video-frame background for the Overview XY plot, in the same
  * pixel coordinate system as the tracks (origin top-left). */

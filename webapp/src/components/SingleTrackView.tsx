@@ -618,8 +618,10 @@ function DirectionAxialPanel({
           ? [{
               x: centers, y: countsRel, type: "bar" as const,
               name: "Rel. to pol",
-              marker: { color: "#e07b00", line: { color: dark ? "#141414" : "white", width: 1 } },
-              opacity: 0.6,
+              // A different grey from the raw bars (not a hue), so the
+              // overlay still reads as greyscale.
+              marker: { color: dark ? "#777" : "#b0b0b0", line: { color: dark ? "#141414" : "white", width: 1 } },
+              opacity: 0.7,
               width: 10,
             }]
           : []),
