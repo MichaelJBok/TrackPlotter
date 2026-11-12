@@ -55,14 +55,20 @@ function computeGlobalAxisStats(data: TracksData, settings: Settings) {
     histMaxSpd = Math.max(histMaxSpd, ...counts);
   }
 
+  // Direction (axial) now overlays the raw bearing histogram with a second
+  // one relative to Pol angle, so the locked axis needs to fit whichever of
+  // the two is taller, not just the pol-relative one.
   let histMaxDir = 0;
   for (const dirAbove of perTrackDirAbove) {
-    const counts = new Array(DIR_HIST_BINS).fill(0);
+    const countsRaw = new Array(DIR_HIST_BINS).fill(0);
+    const countsRel = new Array(DIR_HIST_BINS).fill(0);
     for (const d of dirAbove) {
-      const ax = (((d - settings.polAngle) % 180) + 180) % 180;
-      counts[Math.min(DIR_HIST_BINS - 1, Math.floor(ax / 10))]++;
+      const axRaw = ((d % 180) + 180) % 180;
+      countsRaw[Math.min(DIR_HIST_BINS - 1, Math.floor(axRaw / 10))]++;
+      const axRel = (((d - settings.polAngle) % 180) + 180) % 180;
+      countsRel[Math.min(DIR_HIST_BINS - 1, Math.floor(axRel / 10))]++;
     }
-    histMaxDir = Math.max(histMaxDir, ...counts);
+    histMaxDir = Math.max(histMaxDir, ...countsRaw, ...countsRel);
   }
 
   return { speedPctMax, histMaxSpd, histMaxDir };
@@ -578,24 +584,47 @@ function DirectionAxialPanel({
   dirAbove: number[]; polAngle: number; meanDeg: number; R: number; histMaxDir: number | null; dark: boolean;
 }) {
   const edges = Array.from({ length: 19 }, (_, i) => i * 10);
-  const counts = new Array(18).fill(0);
-  for (const d of dirAbove) {
-    const ax = (((d - polAngle) % 180) + 180) % 180;
-    const idx = Math.min(17, Math.floor(ax / 10));
-    counts[idx]++;
-  }
   const centers = edges.slice(0, -1).map((e) => e + 5);
+
+  function binAxial(offset: number): number[] {
+    const counts = new Array(18).fill(0);
+    for (const d of dirAbove) {
+      const ax = (((d - offset) % 180) + 180) % 180;
+      counts[Math.min(17, Math.floor(ax / 10))]++;
+    }
+    return counts;
+  }
+
+  // The raw bearing histogram is never shifted by Pol angle - when one is
+  // set, a second, differently-shaded histogram overlays it instead,
+  // showing the same bearings relative to that angle.
+  const countsRaw = binAxial(0);
+  const countsRel = polAngle !== 0 ? binAxial(polAngle) : null;
   const subtitle = Number.isFinite(meanDeg) ? `mean ${meanDeg.toFixed(1)}° | R=${R.toFixed(3)}` : "";
+
   return (
     <Plot
-      data={[{
-        x: centers, y: counts, type: "bar",
-        marker: { color: dark ? "#ccc" : "#444", line: { color: dark ? "#141414" : "white", width: 1 } },
-        width: 10,
-      }]}
+      data={[
+        {
+          x: centers, y: countsRaw, type: "bar" as const,
+          name: "Bearing",
+          marker: { color: dark ? "#ccc" : "#444", line: { color: dark ? "#141414" : "white", width: 1 } },
+          width: 10,
+        },
+        ...(countsRel
+          ? [{
+              x: centers, y: countsRel, type: "bar" as const,
+              name: "Rel. to pol",
+              marker: { color: "#e07b00", line: { color: dark ? "#141414" : "white", width: 1 } },
+              opacity: 0.6,
+              width: 10,
+            }]
+          : []),
+      ]}
       layout={baseLayout(
         `Direction (axial)${subtitle ? `<br><span style="font-size:9px">${subtitle}</span>` : ""}`,
         {
+          barmode: "overlay",
           xaxis: {
             title: { text: "Direction (°)" }, range: [0, 180], tickvals: [0, 45, 90, 135, 180],
             gridcolor: dark ? gridColorDark : gridColor,
@@ -605,6 +634,8 @@ function DirectionAxialPanel({
             gridcolor: dark ? gridColorDark : gridColor,
             range: histMaxDir != null ? [0, histMaxDir * 1.15] : undefined,
           },
+          showlegend: countsRel != null,
+          legend: { font: { size: 8 }, x: 1, y: 1.15, xanchor: "right" as const },
         },
         dark,
       )}
