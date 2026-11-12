@@ -5,7 +5,7 @@ import { backgroundImageTag, loadBackgroundImage } from "./lib/backgroundImage";
 import { collectFiles, directoryPickerSupported } from "./lib/directoryPicker";
 import { downloadCsv } from "./lib/exportCsv";
 import { exportAllVisiblePlots } from "./lib/plotDefaults";
-import { loadSettings, saveSettings } from "./lib/settingsStorage";
+import { loadCoreOverrides, loadSettings, saveCoreOverrides, saveSettings } from "./lib/settingsStorage";
 import { type BackgroundImage, type CoreSettings, type Settings } from "./lib/types";
 import OverviewView from "./components/OverviewView";
 import SingleTrackView from "./components/SingleTrackView";
@@ -33,15 +33,18 @@ export default function App() {
   const folderInputRef = useRef<HTMLInputElement>(null);
   const [selection, setSelection] = useState<string>(OVERVIEW);
   const [settings, setSettings] = useState<Settings>(loadSettings);
-  // FPS/Px scale/Min speed/Max ROI%/Color depend on the video, not the
+  // FPS/ROI diameter/Min speed/Max ROI%/Color depend on the video, not the
   // viewer, so each experiment can override them; everything else in
-  // `settings` stays global. Not persisted - tied to this session's loaded
-  // experiments, like the data itself.
-  const [coreOverrides, setCoreOverrides] = useState<Record<string, CoreSettings>>({});
+  // `settings` stays global. Persisted by filename (unlike the loaded data
+  // itself), so re-loading the same folder reattaches these automatically.
+  const [coreOverrides, setCoreOverrides] = useState<Record<string, CoreSettings>>(loadCoreOverrides);
 
   useEffect(() => {
     saveSettings(settings);
   }, [settings]);
+  useEffect(() => {
+    saveCoreOverrides(coreOverrides);
+  }, [coreOverrides]);
   // Whichever view is mounted (Overview or SingleTrack) registers its own
   // CSV-export logic here, since it depends on data computed inside that
   // view - the sidebar just calls whatever's currently registered.
