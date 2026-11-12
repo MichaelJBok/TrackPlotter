@@ -21,6 +21,9 @@ interface Props {
  * only, since it's the only one with a per-track categorical palette. */
 export default function OverviewView({ data, settings, onJumpToTrack, bgImage, registerCsvExport }: Props) {
   const { darkMode: dark, colorBlindMode: cb } = settings;
+  // "units" once the ROI diameter calibration (Settings > ROI diameter) is
+  // set, so distances/speeds read in real-world terms instead of raw px.
+  const unit = settings.pxScale !== 1 ? "units" : "px";
   const stats: TrackStats[] = data.trackLabels.map((label) => {
     const raw = data.tracks[label];
     const { x, y } = applyFilters(raw.x, raw.y, data.roi, settings);
@@ -70,8 +73,8 @@ export default function OverviewView({ data, settings, onJumpToTrack, bgImage, r
         <DirectionPolarPanel stats={stats} dark={dark} cb={cb} onClick={handlePlotlyClick} />
       </div>
       <div style={{ gridColumn: "2", gridRow: "2", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-        <BarPanel title="Distance" stats={stats} valueOf={(s) => s.totalDist} unit="px" dark={dark} cb={cb} onClick={handlePlotlyClick} />
-        <BarPanel title="Speed" stats={stats} valueOf={(s) => s.meanSpeed} unit="px/s" dark={dark} cb={cb} onClick={handlePlotlyClick} />
+        <BarPanel title="Distance" stats={stats} valueOf={(s) => s.totalDist} unit={unit} dark={dark} cb={cb} onClick={handlePlotlyClick} />
+        <BarPanel title="Speed" stats={stats} valueOf={(s) => s.meanSpeed} unit={`${unit}/s`} dark={dark} cb={cb} onClick={handlePlotlyClick} />
       </div>
     </div>
   );
@@ -79,7 +82,10 @@ export default function OverviewView({ data, settings, onJumpToTrack, bgImage, r
 
 function XYOverlayPanel({
   data, settings, bgImage, dark, cb, onClick,
-}: { data: TracksData; settings: Settings; bgImage?: BackgroundImage; dark: boolean; cb: boolean; onClick: (e: any) => void }) {
+}: {
+  data: TracksData; settings: Settings; bgImage?: BackgroundImage; dark: boolean; cb: boolean;
+  onClick: (e: any) => void;
+}) {
   const traces = data.trackLabels.map((label, i) => {
     const raw = data.tracks[label];
     const { x, y } = applyFilters(raw.x, raw.y, data.roi, settings);
@@ -121,6 +127,9 @@ function XYOverlayPanel({
       layout={baseLayout(
         "All individuals — XY tracks",
         {
+          // The plotted x/y are always raw pixel coords (so the ROI circle
+          // and background image, which are also in raw px, stay aligned) -
+          // only the derived distance/speed numbers get unit-converted.
           xaxis: { title: { text: "X (px)" }, gridcolor: dark ? gridColorDark : gridColor },
           yaxis: {
             title: { text: "Y (px)" },

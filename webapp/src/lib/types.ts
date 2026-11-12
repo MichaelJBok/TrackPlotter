@@ -8,7 +8,15 @@ export interface TracksData {
 
 export interface Settings {
   fps: number;
-  pxScale: number; // cm per px; 1 = stay in px
+  /** cm-per-px (or whatever real-world unit roiDiameterReal is in); 1 = stay
+   * in px. Derived, not directly settable - see roiDiameterReal and
+   * App.tsx's effectiveSettings. */
+  pxScale: number;
+  /** The ROI's real-world diameter (same unit you want distances/speeds
+   * in) - pxScale is computed from this ÷ the ROI's pixel diameter (read
+   * from the loaded CSV), instead of asking you to compute a px-per-unit
+   * ratio yourself. 0 = not calibrated, stays in px. */
+  roiDiameterReal: number;
   minSpeed: number;
   polAngle: number; // degrees
   showPolLine: boolean;
@@ -32,6 +40,7 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   fps: 10,
   pxScale: 1,
+  roiDiameterReal: 0,
   minSpeed: 0,
   polAngle: 0,
   showPolLine: false,
@@ -49,7 +58,7 @@ export const DEFAULT_SETTINGS: Settings = {
  * rate, physical scale, and filtering/display depend on the video, not the
  * viewer) - overridable per experiment in App.tsx, with an "Apply to all"
  * button to broadcast one experiment's values to every other loaded one. */
-export type CoreSettings = Pick<Settings, "fps" | "pxScale" | "minSpeed" | "roiFilterPct" | "colorMode">;
+export type CoreSettings = Pick<Settings, "fps" | "roiDiameterReal" | "minSpeed" | "roiFilterPct" | "colorMode">;
 
 /** A loaded video-frame background for the Overview XY plot, in the same
  * pixel coordinate system as the tracks (origin top-left). */

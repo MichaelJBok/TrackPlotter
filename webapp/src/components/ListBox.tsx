@@ -8,6 +8,7 @@ interface Props {
   emptyMessage?: string;
   rows?: number;
   showSearch?: boolean;
+  dark?: boolean;
 }
 
 const ROW_HEIGHT = 19;
@@ -19,7 +20,7 @@ const ROW_HEIGHT = 19;
  * itself once a row's been clicked - instead of scrolling the page, which
  * is what happens by default when no focusable control catches the key. */
 export default function ListBox({
-  items, value, onSelect, placeholder, emptyMessage = "No items", rows = 10, showSearch = true,
+  items, value, onSelect, placeholder, emptyMessage = "No items", rows = 10, showSearch = true, dark = false,
 }: Props) {
   const [filter, setFilter] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
@@ -75,16 +76,17 @@ export default function ListBox({
         ref={containerRef}
         tabIndex={items.length === 0 ? undefined : 0}
         style={{
-          border: "1px solid #ccc",
+          border: dark ? "1px solid #444" : "1px solid #ccc",
           borderRadius: 4,
           maxHeight: ROW_HEIGHT * rows,
           overflowY: "auto",
-          background: "white",
+          background: dark ? "#1c1c1c" : "white",
+          color: dark ? "#e6e6e6" : undefined,
           outline: "none",
         }}
       >
         {filtered.length === 0 ? (
-          <div style={{ padding: "6px 8px", fontSize: 12, color: "#999" }}>{emptyMessage}</div>
+          <div style={{ padding: "6px 8px", fontSize: 12, color: dark ? "#777" : "#999" }}>{emptyMessage}</div>
         ) : (
           filtered.map((item) => (
             <div
@@ -100,7 +102,7 @@ export default function ListBox({
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
-                background: item === value ? "#dce7f7" : "transparent",
+                background: item === value ? (dark ? "#2c4a7c" : "#dce7f7") : "transparent",
               }}
             >
               {item}

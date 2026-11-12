@@ -12,3 +12,37 @@ body {
   background: #f4f4f6;
   color: #1a1a1a;
 }
+
+/* Dark mode (Settings > Dark mode) - applied via a .dark class on the app's
+ * root element. Plot-specific dark colors live alongside each plot instead
+ * (see plotDefaults.ts); this covers the surrounding chrome: page/sidebar
+ * background and native form controls, which otherwise stay light-themed
+ * regardless of the page around them. */
+.dark {
+  background: #121212;
+  color: #e6e6e6;
+}
+.dark aside {
+  background: #181818;
+  border-right-color: #333 !important;
+}
+.dark main {
+  background: #121212;
+}
+.dark input,
+.dark select,
+.dark button {
+  background: #242424;
+  color: #e6e6e6;
+  border: 1px solid #444;
+}
+.dark button:disabled {
+  color: #777;
+  background: #1c1c1c;
+}
+.dark input[type="checkbox"] {
+  accent-color: #6ea8fe;
+}
+.dark ::placeholder {
+  color: #888;
+}

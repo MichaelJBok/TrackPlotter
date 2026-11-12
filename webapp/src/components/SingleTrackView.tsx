@@ -74,6 +74,9 @@ function computeGlobalAxisStats(data: TracksData, settings: Settings) {
  */
 export default function SingleTrackView({ data, label, settings, registerCsvExport }: Props) {
   const dark = settings.darkMode;
+  // "units" once the ROI diameter calibration (Settings > ROI diameter) is
+  // set, so distances/speeds read in real-world terms instead of raw px.
+  const unit = settings.pxScale !== 1 ? "units" : "px";
   const raw = data.tracks[label];
   const { x, y } = applyFilters(raw.x, raw.y, data.roi, settings);
   const { frame, speedRaw, speedSmooth, dirDeg } = computeFrameSeries(x, y, settings.fps, settings.pxScale);
@@ -144,7 +147,7 @@ export default function SingleTrackView({ data, label, settings, registerCsvExpo
     >
       <div style={{ gridColumn: "1", gridRow: "1" }}>
         <TrackPanel x={x} y={y} roi={data.roi} roiFilterPct={settings.roiFilterPct} colorVals={trackColorVals}
-          pathStats={path} selectedFrame={selectedFrame} onSelectFrame={setSelectedFrame} dark={dark} />
+          pathStats={path} selectedFrame={selectedFrame} onSelectFrame={setSelectedFrame} dark={dark} unit={unit} />
       </div>
       <div
         style={{
@@ -158,35 +161,35 @@ export default function SingleTrackView({ data, label, settings, registerCsvExpo
         <DirectionPanel frame={frame} dirDeg={dirDeg} fps={settings.fps} colorVals={colorVals} xRange={frameRange} timeCutSec={settings.timeCutSec}
           selectedFrame={selectedFrame} onSelectFrame={setSelectedFrame} dark={dark} />
         <SpeedPanel frame={frame} speedRaw={speedRaw} speedSmooth={speedSmooth} xRange={frameRange} fps={settings.fps} timeCutSec={settings.timeCutSec}
-          selectedFrame={selectedFrame} onSelectFrame={setSelectedFrame} speedAxisMax={speedAxisMax} dark={dark} />
+          selectedFrame={selectedFrame} onSelectFrame={setSelectedFrame} speedAxisMax={speedAxisMax} dark={dark} unit={unit} />
       </div>
       <div style={{ gridColumn: "1", gridRow: "2" }}>
         <DirectionRosePanel dirDeg={dirAbove} polAngle={settings.polAngle} showPolLine={settings.showPolLine} dark={dark} />
       </div>
       <div style={{ gridColumn: "2", gridRow: "2" }}>
-        <SpeedVsDirectionPanel dirDeg={dirDeg} speed={speedRaw} minSpeed={settings.minSpeed} colorVals={colorVals} speedAxisMax={speedAxisMax} dark={dark} />
+        <SpeedVsDirectionPanel dirDeg={dirDeg} speed={speedRaw} minSpeed={settings.minSpeed} colorVals={colorVals} speedAxisMax={speedAxisMax} dark={dark} unit={unit} />
       </div>
       <div style={{ gridColumn: "3", gridRow: "2" }}>
         <DirectionAxialPanel dirAbove={dirAbove} polAngle={settings.polAngle} meanDeg={meanDeg} R={R} histMaxDir={histMaxDir} dark={dark} />
       </div>
       <div style={{ gridColumn: "4", gridRow: "2" }}>
-        <SpeedHistogramPanel speed={speedRaw} minSpeed={settings.minSpeed} speedAxisMax={speedAxisMax} histMaxSpd={histMaxSpd} dark={dark} />
+        <SpeedHistogramPanel speed={speedRaw} minSpeed={settings.minSpeed} speedAxisMax={speedAxisMax} histMaxSpd={histMaxSpd} dark={dark} unit={unit} />
       </div>
     </div>
   );
 }
 
 function TrackPanel({
-  x, y, roi, roiFilterPct, colorVals, pathStats, selectedFrame, onSelectFrame, dark,
+  x, y, roi, roiFilterPct, colorVals, pathStats, selectedFrame, onSelectFrame, dark, unit,
 }: {
   x: number[]; y: number[]; roi: TracksData["roi"]; roiFilterPct: number;
   colorVals: number[];
   pathStats: { straightness: number; meanAbsTurnDeg: number; netDisp: number };
-  selectedFrame: number | null; onSelectFrame: (frame: number) => void; dark: boolean;
+  selectedFrame: number | null; onSelectFrame: (frame: number) => void; dark: boolean; unit: string;
 }) {
   const shapes = roiShapes(roi, roiFilterPct);
   const subtitle = Number.isFinite(pathStats.straightness)
-    ? `SI=${pathStats.straightness.toFixed(2)} | turn=${pathStats.meanAbsTurnDeg.toFixed(1)}° | disp=${pathStats.netDisp.toFixed(0)}px`
+    ? `SI=${pathStats.straightness.toFixed(2)} | turn=${pathStats.meanAbsTurnDeg.toFixed(1)}° | disp=${pathStats.netDisp.toFixed(0)}${unit}`
     : "";
   // Track_X/Y rows are 0-indexed; the shared "frame" numbering elsewhere in
   // this view is 1-based (row i == frame i+1), so convert both ways here.
@@ -227,6 +230,9 @@ function TrackPanel({
       layout={baseLayout(
         `Track${subtitle ? `<br><span style="font-size:9px">${subtitle}</span>` : ""}`,
         {
+          // The plotted x/y are always raw pixel coords (so the ROI circle
+          // stays aligned) - only the derived disp (above) and distance/
+          // speed panels get unit-converted.
           xaxis: { title: { text: "X (px)" }, gridcolor: dark ? gridColorDark : gridColor },
           yaxis: {
             title: { text: "Y (px)" },
@@ -356,13 +362,14 @@ function DirectionPanel({
 }
 
 function SpeedPanel({
-  frame, speedRaw, speedSmooth, xRange, fps, timeCutSec, selectedFrame, onSelectFrame, speedAxisMax, dark,
+  frame, speedRaw, speedSmooth, xRange, fps, timeCutSec, selectedFrame, onSelectFrame, speedAxisMax, dark, unit,
 }: {
   frame: number[]; speedRaw: number[]; speedSmooth: number[];
   xRange: [number, number]; fps: number; timeCutSec: number | null;
   selectedFrame: number | null; onSelectFrame: (frame: number) => void;
-  speedAxisMax: number | null; dark: boolean;
+  speedAxisMax: number | null; dark: boolean; unit: string;
 }) {
+  const durationSec = frame.length ? frame[frame.length - 1] / fps : 0;
   const handleClick = (e: Readonly<{ points: ReadonlyArray<{ x?: number }> }>) => {
     const f = e.points?.[0]?.x;
     if (f != null) onSelectFrame(Math.round(f));
@@ -399,13 +406,19 @@ function SpeedPanel({
             domain: [0, 1],
             range: xRange,
           },
+          xaxis2: {
+            overlaying: "x",
+            side: "top",
+            range: [0, durationSec],
+            title: { text: "Time (s)", font: { size: 9 } },
+          },
           yaxis: {
-            title: { text: "Speed (px/s)" },
+            title: { text: `Speed (${unit}/s)` },
             gridcolor: dark ? gridColorDark : gridColor,
             range: speedAxisMax != null ? [0, speedAxisMax] : undefined,
           },
           shapes: [...timeCutShape(fps, timeCutSec), ...selectionShape(selectedFrame)],
-          margin: { l: 50, r: 20, t: 24, b: 36 },
+          margin: { l: 50, r: 20, t: 40, b: 36 },
         },
         dark,
       )}
@@ -486,10 +499,10 @@ function DirectionRosePanel({
 }
 
 function SpeedVsDirectionPanel({
-  dirDeg, speed, minSpeed, colorVals, speedAxisMax, dark,
+  dirDeg, speed, minSpeed, colorVals, speedAxisMax, dark, unit,
 }: {
   dirDeg: number[]; speed: number[]; minSpeed: number; colorVals: number[]; speedAxisMax: number | null;
-  dark: boolean;
+  dark: boolean; unit: string;
 }) {
   const faded = { x: [] as number[], y: [] as number[] };
   const main = { x: [] as number[], y: [] as number[], c: [] as number[] };
@@ -517,7 +530,7 @@ function SpeedVsDirectionPanel({
             gridcolor: dark ? gridColorDark : gridColor,
           },
           yaxis: {
-            title: { text: "Speed (px/s)" },
+            title: { text: `Speed (${unit}/s)` },
             gridcolor: dark ? gridColorDark : gridColor,
             range: speedAxisMax != null ? [0, speedAxisMax] : undefined,
           },
@@ -579,9 +592,10 @@ function DirectionAxialPanel({
  * in place instead of being dropped, and a dashed line marks the cutoff
  * (mirrors the MATLAB app's xline). */
 function SpeedHistogramPanel({
-  speed, minSpeed, speedAxisMax, histMaxSpd, dark,
+  speed, minSpeed, speedAxisMax, histMaxSpd, dark, unit,
 }: {
   speed: number[]; minSpeed: number; speedAxisMax: number | null; histMaxSpd: number | null; dark: boolean;
+  unit: string;
 }) {
   const valid = speed.filter((s) => Number.isFinite(s));
   const localHi = valid.length ? Math.max(...valid) * 1.001 : 1;
@@ -607,7 +621,7 @@ function SpeedHistogramPanel({
       layout={baseLayout(
         "Speed Distribution",
         {
-          xaxis: { title: { text: "Speed (px/s)" }, gridcolor: dark ? gridColorDark : gridColor, range: [0, hi] },
+          xaxis: { title: { text: `Speed (${unit}/s)` }, gridcolor: dark ? gridColorDark : gridColor, range: [0, hi] },
           yaxis: {
             title: { text: "Count" },
             gridcolor: dark ? gridColorDark : gridColor,

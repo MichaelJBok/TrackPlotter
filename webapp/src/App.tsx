@@ -58,21 +58,30 @@ export default function App() {
   const bgImage = activeFile ? backgroundImages[experimentTag(activeFile)] : undefined;
 
   // What the active experiment actually sees: global settings, with its own
-  // FPS/Px scale/Min speed/Max ROI%/Color override layered on top, if any.
-  const effectiveSettings: Settings = {
+  // FPS/ROI diameter/Min speed/Max ROI%/Color override layered on top, if
+  // any, plus pxScale derived from that ROI diameter - a real-world unit ÷
+  // the ROI's own pixel diameter (read from the loaded CSV) - instead of
+  // asking for a pre-computed px-per-unit ratio.
+  const roiPixelDiam = data?.roi?.diam ?? null;
+  const mergedCore: Settings = {
     ...settings,
     ...(activeFile ? coreOverrides[activeFile] : undefined),
   };
+  const derivedPxScale = mergedCore.roiDiameterReal > 0 && roiPixelDiam
+    ? mergedCore.roiDiameterReal / roiPixelDiam
+    : 1;
+  const effectiveSettings: Settings = { ...mergedCore, pxScale: derivedPxScale };
+  const dark = settings.darkMode;
 
   function updateCoreSetting(patch: Partial<CoreSettings>) {
     if (!activeFile) {
       setSettings((s) => ({ ...s, ...patch }));
       return;
     }
-    const { fps, pxScale, minSpeed, roiFilterPct, colorMode } = effectiveSettings;
+    const { fps, roiDiameterReal, minSpeed, roiFilterPct, colorMode } = effectiveSettings;
     setCoreOverrides((prev) => ({
       ...prev,
-      [activeFile]: { fps, pxScale, minSpeed, roiFilterPct, colorMode, ...patch },
+      [activeFile]: { fps, roiDiameterReal, minSpeed, roiFilterPct, colorMode, ...patch },
     }));
   }
 
@@ -81,8 +90,8 @@ export default function App() {
   }
 
   function handleApplyToAll() {
-    const { fps, pxScale, minSpeed, roiFilterPct, colorMode } = effectiveSettings;
-    const core: CoreSettings = { fps, pxScale, minSpeed, roiFilterPct, colorMode };
+    const { fps, roiDiameterReal, minSpeed, roiFilterPct, colorMode } = effectiveSettings;
+    const core: CoreSettings = { fps, roiDiameterReal, minSpeed, roiFilterPct, colorMode };
     setCoreOverrides(Object.fromEntries(uploadedNames.map((name) => [name, core])));
   }
 
@@ -187,7 +196,7 @@ export default function App() {
   }
 
   return (
-    <div style={{ display: "flex", height: "100vh" }}>
+    <div className={dark ? "dark" : undefined} style={{ display: "flex", height: "100vh" }}>
       <aside
         style={{
           width: 280,
@@ -201,7 +210,7 @@ export default function App() {
           gap: 20,
         }}
       >
-        <h1 style={{ fontSize: 16, margin: 0, color: "#1f3a63" }}>TrackPlotter</h1>
+        <h1 style={{ fontSize: 16, margin: 0, color: dark ? "#8fb4e3" : "#1f3a63" }}>TrackPlotter</h1>
 
         <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <SectionLabel>Data</SectionLabel>
@@ -235,6 +244,7 @@ export default function App() {
             onSelect={handleFileChange}
             placeholder="Search experiments…"
             emptyMessage="No data loaded"
+            dark={dark}
           />
           {data && (
             <>
@@ -247,7 +257,7 @@ export default function App() {
                     fontSize: 12,
                     textAlign: "left",
                     padding: "2px 6px",
-                    background: selection === OVERVIEW ? "#dce7f7" : undefined,
+                    background: selection === OVERVIEW ? (dark ? "#2c4a7c" : "#dce7f7") : undefined,
                   }}
                 >
                   — Overview (ALL individuals) —
@@ -258,6 +268,7 @@ export default function App() {
                 value={selection}
                 onSelect={setSelection}
                 showSearch={false}
+                dark={dark}
               />
             </>
           )}
@@ -269,6 +280,7 @@ export default function App() {
           onChangeCore={updateCoreSetting}
           onApplyToAll={handleApplyToAll}
           canApplyToAll={uploadedNames.length > 1}
+          roiPixelDiam={roiPixelDiam}
         />
 
         <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -310,7 +322,7 @@ export default function App() {
         )}
 
         {!data ? (
-          <p style={{ color: "#666", fontSize: 14 }}>
+          <p style={{ color: dark ? "#aaa" : "#666", fontSize: 14 }}>
             Load a folder of tracks CSVs from the sidebar to get started. Nothing you load is ever sent
             anywhere - it's read directly off your disk and stays in this browser tab.
           </p>
@@ -352,13 +364,14 @@ const fieldRow: React.CSSProperties = {
 const numberInput: React.CSSProperties = { width: 60 };
 
 function SettingsBar({
-  settings, onChangeGlobal, onChangeCore, onApplyToAll, canApplyToAll,
+  settings, onChangeGlobal, onChangeCore, onApplyToAll, canApplyToAll, roiPixelDiam,
 }: {
   settings: Settings;
   onChangeGlobal: (patch: Partial<Settings>) => void;
   onChangeCore: (patch: Partial<CoreSettings>) => void;
   onApplyToAll: () => void;
   canApplyToAll: boolean;
+  roiPixelDiam: number | null;
 }) {
   return (
     <section style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 12 }}>
@@ -399,15 +412,23 @@ function SettingsBar({
         />
       </label>
       <label style={fieldRow}>
-        Px scale
+        ROI diameter
         <input
           type="number"
           step="0.01"
-          value={settings.pxScale}
+          title="Real-world diameter of the ROI (same units you want distances/speeds in) - 0 stays in px"
+          value={settings.roiDiameterReal}
           style={numberInput}
-          onChange={(e) => onChangeCore({ pxScale: Number(e.target.value) || 1 })}
+          onChange={(e) => onChangeCore({ roiDiameterReal: Number(e.target.value) || 0 })}
         />
       </label>
+      {roiPixelDiam != null && (
+        <div style={{ fontSize: 10, color: "#888", marginTop: -4 }}>
+          {settings.roiDiameterReal > 0
+            ? `ROI is ${roiPixelDiam.toFixed(0)} px across → 1 px = ${(settings.roiDiameterReal / roiPixelDiam).toFixed(4)} units`
+            : `ROI is ${roiPixelDiam.toFixed(0)} px across - set a diameter above to calibrate`}
+        </div>
+      )}
       <label style={fieldRow}>
         Min speed
         <input
@@ -429,7 +450,7 @@ function SettingsBar({
       <button
         type="button"
         disabled={!canApplyToAll}
-        title="Copy Color/FPS/Px scale/Min speed/Max ROI% from this experiment to every other loaded experiment"
+        title="Copy Color/FPS/ROI diameter/Min speed/Max ROI% from this experiment to every other loaded experiment"
         onClick={onApplyToAll}
       >
         Apply to all experiments
