@@ -52,8 +52,8 @@ export const basePlotConfig: Partial<Config> = {
   responsive: true,
 };
 
-/** `dark` swaps the usual white/black theme for a dark one - used by the
- * Overview panels when Settings.darkMode is on (see OverviewView.tsx). */
+/** `dark` swaps the usual white/black theme for a dark one - used by every
+ * panel in both views when Settings.darkMode is on. */
 export function baseLayout(title: string, overrides: Partial<Layout> = {}, dark = false): Partial<Layout> {
   return {
     title: { text: title, font: { size: 12, color: dark ? "#eee" : undefined } },

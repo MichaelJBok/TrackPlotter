@@ -17,7 +17,8 @@ interface Props {
 /** Multi-individual overview: XY overlay (+ optional background image), per-
  * individual distance/speed bars, and a direction polar plot. Clicking any
  * track/bar/point jumps to that individual's single-track view. Dark mode
- * and the colorblind-safe palette are both scoped to this view only. */
+ * applies everywhere; the colorblind-safe palette is scoped to this view
+ * only, since it's the only one with a per-track categorical palette. */
 export default function OverviewView({ data, settings, onJumpToTrack, bgImage, registerCsvExport }: Props) {
   const { darkMode: dark, colorBlindMode: cb } = settings;
   const stats: TrackStats[] = data.trackLabels.map((label) => {

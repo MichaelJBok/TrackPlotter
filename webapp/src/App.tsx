@@ -23,13 +23,11 @@ export default function App() {
   const [uploadedFiles, setUploadedFiles] = useState<Record<string, string>>({});
   const [activeFile, setActiveFile] = useState<string | null>(null);
   const [fileErrors, setFileErrors] = useState<string[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   // Background images are matched to an experiment by tag (see experimentTag)
   // and kept separate from the CSVs themselves - loading one never merges
   // anything, it just gives that experiment's Overview plot a backdrop.
   const [backgroundImages, setBackgroundImages] = useState<Record<string, BackgroundImage>>({});
   const [bgErrors, setBgErrors] = useState<string[]>([]);
-  const bgInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const [selection, setSelection] = useState<string>(OVERVIEW);
   const [settings, setSettings] = useState<Settings>(loadSettings);
@@ -132,19 +130,6 @@ export default function App() {
     return { errors, entries };
   }
 
-  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
-    e.target.value = ""; // allow re-selecting the same filename(s) later
-    if (files.length === 0) return;
-    const { errors, entries, firstGood } = await ingestCsvFiles(files);
-    setFileErrors(errors);
-    if (firstGood) {
-      setUploadedFiles((prev) => ({ ...prev, ...entries }));
-      setActiveFile(firstGood);
-      setSelection(OVERVIEW);
-    }
-  }
-
   // A folder drop just sorts every file by extension and feeds each half
   // through the same path as the individual pickers - anything else
   // (.DS_Store, notes, ...) is silently ignored, not reported as an error.
@@ -192,17 +177,6 @@ export default function App() {
     }
   }
 
-  async function handleBackgroundUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
-    e.target.value = "";
-    if (files.length === 0) return;
-    const { errors, entries } = await ingestBackgroundFiles(files);
-    setBgErrors(errors);
-    if (Object.keys(entries).length > 0) {
-      setBackgroundImages((prev) => ({ ...prev, ...entries }));
-    }
-  }
-
   async function handleExportFigures(format: "png" | "pdf") {
     setFiguresExporting(true);
     try {
@@ -247,28 +221,10 @@ export default function App() {
           <button type="button" style={{ fontSize: 13 }} onClick={handlePickFolder}>
             Load folder…
           </button>
-          <input
-            type="file"
-            accept=".csv"
-            multiple
-            ref={fileInputRef}
-            onChange={handleFileUpload}
-            style={{ display: "none" }}
-          />
-          <button type="button" style={{ fontSize: 12 }} onClick={() => fileInputRef.current?.click()}>
-            Load CSV(s) from disk…
-          </button>
-          <input
-            type="file"
-            accept="image/jpeg,image/png"
-            multiple
-            ref={bgInputRef}
-            onChange={handleBackgroundUpload}
-            style={{ display: "none" }}
-          />
-          <button type="button" style={{ fontSize: 12 }} onClick={() => bgInputRef.current?.click()}>
-            Load background image(s)…
-          </button>
+          <p style={{ fontSize: 11, color: "#888", margin: 0 }}>
+            Loads every tracks CSV in the folder, plus any matching "&lt;experiment&gt;_bg.jpg/png" background
+            images - CSVs load fine on their own if there are no images.
+          </p>
         </section>
 
         <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -355,8 +311,8 @@ export default function App() {
 
         {!data ? (
           <p style={{ color: "#666", fontSize: 14 }}>
-            Load a tracks CSV (or a whole folder of them) from the sidebar to get started. Nothing you load is
-            ever sent anywhere - it's read directly off your disk and stays in this browser tab.
+            Load a folder of tracks CSVs from the sidebar to get started. Nothing you load is ever sent
+            anywhere - it's read directly off your disk and stays in this browser tab.
           </p>
         ) : selection === OVERVIEW ? (
           <OverviewView
@@ -423,7 +379,7 @@ function SettingsBar({
           checked={settings.darkMode}
           onChange={(e) => onChangeGlobal({ darkMode: e.target.checked })}
         />
-        Dark mode (Overview)
+        Dark mode
       </label>
       <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <input
