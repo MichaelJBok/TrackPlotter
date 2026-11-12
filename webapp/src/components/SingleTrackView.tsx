@@ -74,9 +74,9 @@ function computeGlobalAxisStats(data: TracksData, settings: Settings) {
  */
 export default function SingleTrackView({ data, label, settings, registerCsvExport }: Props) {
   const dark = settings.darkMode;
-  // "units" once the ROI diameter calibration (Settings > ROI diameter) is
+  // "cm" once the ROI diameter calibration (Settings > ROI diameter) is
   // set, so distances/speeds read in real-world terms instead of raw px.
-  const unit = settings.pxScale !== 1 ? "units" : "px";
+  const unit = settings.pxScale !== 1 ? "cm" : "px";
   const raw = data.tracks[label];
   const { x, y } = applyFilters(raw.x, raw.y, data.roi, settings);
   const { frame, speedRaw, speedSmooth, dirDeg } = computeFrameSeries(x, y, settings.fps, settings.pxScale);

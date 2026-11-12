@@ -8,14 +8,13 @@ export interface TracksData {
 
 export interface Settings {
   fps: number;
-  /** cm-per-px (or whatever real-world unit roiDiameterReal is in); 1 = stay
-   * in px. Derived, not directly settable - see roiDiameterReal and
-   * App.tsx's effectiveSettings. */
+  /** cm-per-px; 1 = stay in px. Derived, not directly settable - see
+   * roiDiameterReal and App.tsx's effectiveSettings. */
   pxScale: number;
-  /** The ROI's real-world diameter (same unit you want distances/speeds
-   * in) - pxScale is computed from this ÷ the ROI's pixel diameter (read
-   * from the loaded CSV), instead of asking you to compute a px-per-unit
-   * ratio yourself. 0 = not calibrated, stays in px. */
+  /** The ROI's real-world diameter in cm - pxScale is computed from this ÷
+   * the ROI's pixel diameter (read from the loaded CSV), instead of asking
+   * you to compute a px-per-cm ratio yourself. 0 = not calibrated, stays
+   * in px. */
   roiDiameterReal: number;
   minSpeed: number;
   polAngle: number; // degrees

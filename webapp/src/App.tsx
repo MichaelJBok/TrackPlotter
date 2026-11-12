@@ -59,9 +59,9 @@ export default function App() {
 
   // What the active experiment actually sees: global settings, with its own
   // FPS/ROI diameter/Min speed/Max ROI%/Color override layered on top, if
-  // any, plus pxScale derived from that ROI diameter - a real-world unit ÷
-  // the ROI's own pixel diameter (read from the loaded CSV) - instead of
-  // asking for a pre-computed px-per-unit ratio.
+  // any, plus pxScale derived from that ROI diameter - the ROI's real-world
+  // diameter in cm ÷ its pixel diameter (read from the loaded CSV) - instead
+  // of asking for a pre-computed px-per-cm ratio.
   const roiPixelDiam = data?.roi?.diam ?? null;
   const mergedCore: Settings = {
     ...settings,
@@ -412,11 +412,11 @@ function SettingsBar({
         />
       </label>
       <label style={fieldRow}>
-        ROI diameter
+        ROI diameter (cm)
         <input
           type="number"
           step="0.01"
-          title="Real-world diameter of the ROI (same units you want distances/speeds in) - 0 stays in px"
+          title="Real-world diameter of the ROI, in cm - 0 stays in px"
           value={settings.roiDiameterReal}
           style={numberInput}
           onChange={(e) => onChangeCore({ roiDiameterReal: Number(e.target.value) || 0 })}
@@ -425,7 +425,7 @@ function SettingsBar({
       {roiPixelDiam != null && (
         <div style={{ fontSize: 10, color: "#888", marginTop: -4 }}>
           {settings.roiDiameterReal > 0
-            ? `ROI is ${roiPixelDiam.toFixed(0)} px across → 1 px = ${(settings.roiDiameterReal / roiPixelDiam).toFixed(4)} units`
+            ? `ROI is ${roiPixelDiam.toFixed(0)} px across → 1 px = ${(settings.roiDiameterReal / roiPixelDiam).toFixed(4)} cm`
             : `ROI is ${roiPixelDiam.toFixed(0)} px across - set a diameter above to calibrate`}
         </div>
       )}
