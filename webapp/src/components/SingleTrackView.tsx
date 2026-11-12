@@ -296,6 +296,24 @@ function selectionShape(selectedFrame: number | null) {
   ];
 }
 
+/** A horizontal dashed line marking the Min speed cutoff on a speed (y)
+ * axis - the Speed Distribution panel has its own vertical version of this
+ * since speed is on its x-axis instead. */
+function minSpeedShape(minSpeed: number) {
+  if (minSpeed <= 0) return [];
+  return [
+    {
+      type: "line" as const,
+      x0: 0,
+      x1: 1,
+      xref: "paper" as const,
+      y0: minSpeed,
+      y1: minSpeed,
+      line: { color: "#cc2626", width: 1.3, dash: "dash" as const },
+    },
+  ];
+}
+
 function DirectionPanel({
   frame, dirDeg, fps, colorVals, xRange, timeCutSec, selectedFrame, onSelectFrame, dark,
 }: {
@@ -543,6 +561,7 @@ function SpeedVsDirectionPanel({
             gridcolor: dark ? gridColorDark : gridColor,
             range: speedAxisMax != null ? [0, speedAxisMax] : undefined,
           },
+          shapes: minSpeedShape(minSpeed),
         },
         dark,
       )}
