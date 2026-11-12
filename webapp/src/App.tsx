@@ -363,6 +363,12 @@ const fieldRow: React.CSSProperties = {
 };
 const numberInput: React.CSSProperties = { width: 60 };
 
+/** Accepts "," as a decimal separator too (common outside en-US locales),
+ * since a plain Number() rejects it outright. */
+function parseLocaleNumber(raw: string): number {
+  return Number(raw.replace(",", "."));
+}
+
 function SettingsBar({
   settings, onChangeGlobal, onChangeCore, onApplyToAll, canApplyToAll, roiPixelDiam,
 }: {
@@ -405,21 +411,22 @@ function SettingsBar({
       <label style={fieldRow}>
         FPS
         <input
-          type="number"
+          type="text"
+          inputMode="decimal"
           value={settings.fps}
           style={numberInput}
-          onChange={(e) => onChangeCore({ fps: Number(e.target.value) || 1 })}
+          onChange={(e) => onChangeCore({ fps: parseLocaleNumber(e.target.value) || 1 })}
         />
       </label>
       <label style={fieldRow}>
         ROI diameter (cm)
         <input
-          type="number"
-          step="0.01"
+          type="text"
+          inputMode="decimal"
           title="Real-world diameter of the ROI, in cm - 0 stays in px"
           value={settings.roiDiameterReal}
           style={numberInput}
-          onChange={(e) => onChangeCore({ roiDiameterReal: Number(e.target.value) || 0 })}
+          onChange={(e) => onChangeCore({ roiDiameterReal: parseLocaleNumber(e.target.value) || 0 })}
         />
       </label>
       {roiPixelDiam != null && (
@@ -432,19 +439,21 @@ function SettingsBar({
       <label style={fieldRow}>
         Min speed
         <input
-          type="number"
+          type="text"
+          inputMode="decimal"
           value={settings.minSpeed}
           style={numberInput}
-          onChange={(e) => onChangeCore({ minSpeed: Number(e.target.value) || 0 })}
+          onChange={(e) => onChangeCore({ minSpeed: parseLocaleNumber(e.target.value) || 0 })}
         />
       </label>
       <label style={fieldRow}>
         Max ROI%
         <input
-          type="number"
+          type="text"
+          inputMode="decimal"
           value={settings.roiFilterPct}
           style={numberInput}
-          onChange={(e) => onChangeCore({ roiFilterPct: Number(e.target.value) || 0 })}
+          onChange={(e) => onChangeCore({ roiFilterPct: parseLocaleNumber(e.target.value) || 0 })}
         />
       </label>
       <button
@@ -458,10 +467,11 @@ function SettingsBar({
       <label style={fieldRow}>
         Pol angle
         <input
-          type="number"
+          type="text"
+          inputMode="decimal"
           value={settings.polAngle}
           style={numberInput}
-          onChange={(e) => onChangeGlobal({ polAngle: Number(e.target.value) || 0 })}
+          onChange={(e) => onChangeGlobal({ polAngle: parseLocaleNumber(e.target.value) || 0 })}
         />
       </label>
       <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -482,11 +492,12 @@ function SettingsBar({
           Time cut (s)
         </span>
         <input
-          type="number"
+          type="text"
+          inputMode="decimal"
           disabled={settings.timeCutSec == null}
           value={settings.timeCutSec ?? 0}
           style={numberInput}
-          onChange={(e) => onChangeGlobal({ timeCutSec: Number(e.target.value) || 0 })}
+          onChange={(e) => onChangeGlobal({ timeCutSec: parseLocaleNumber(e.target.value) || 0 })}
         />
       </label>
       <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -500,13 +511,12 @@ function SettingsBar({
       <label style={fieldRow}>
         Speed pctile
         <input
-          type="number"
-          min={1}
-          max={100}
+          type="text"
+          inputMode="decimal"
           disabled={!settings.lockSpeedAxis}
           value={settings.speedPercentile}
           style={numberInput}
-          onChange={(e) => onChangeGlobal({ speedPercentile: Number(e.target.value) || 95 })}
+          onChange={(e) => onChangeGlobal({ speedPercentile: parseLocaleNumber(e.target.value) || 95 })}
         />
       </label>
       <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
