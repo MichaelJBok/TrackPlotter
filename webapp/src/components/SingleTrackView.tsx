@@ -85,6 +85,11 @@ export default function SingleTrackView({ data, label, settings, registerCsvExpo
   const path = computePathStats(x, y, settings.pxScale, dirAbove);
   const { meanDeg, R } = axialMeanR(dirAbove, settings.polAngle);
 
+  // Same above-minSpeed filtering as computeTrackStats (Overview's stats
+  // table) - for the Speed Distribution panel's subtitle.
+  const aboveSpeeds = speedRaw.filter((s) => s >= settings.minSpeed);
+  const meanSpeed = aboveSpeeds.length ? aboveSpeeds.reduce((a, b) => a + b, 0) / aboveSpeeds.length : NaN;
+
   // Speed coloring uses each point's rank in the speed distribution, not the
   // raw value - otherwise a few fast outliers stretch the color scale and
   // the slow/typical majority all reads as nearly the same color.
@@ -173,7 +178,8 @@ export default function SingleTrackView({ data, label, settings, registerCsvExpo
         <DirectionAxialPanel dirAbove={dirAbove} polAngle={settings.polAngle} meanDeg={meanDeg} R={R} histMaxDir={histMaxDir} dark={dark} />
       </div>
       <div style={{ gridColumn: "4", gridRow: "2" }}>
-        <SpeedHistogramPanel speed={speedRaw} minSpeed={settings.minSpeed} speedAxisMax={speedAxisMax} histMaxSpd={histMaxSpd} dark={dark} unit={unit} />
+        <SpeedHistogramPanel speed={speedRaw} minSpeed={settings.minSpeed} speedAxisMax={speedAxisMax} histMaxSpd={histMaxSpd}
+          meanSpeed={meanSpeed} totalDist={path.totalDist} dark={dark} unit={unit} />
       </div>
     </div>
   );
@@ -595,10 +601,10 @@ function DirectionAxialPanel({
  * in place instead of being dropped, and a dashed line marks the cutoff
  * (mirrors the MATLAB app's xline). */
 function SpeedHistogramPanel({
-  speed, minSpeed, speedAxisMax, histMaxSpd, dark, unit,
+  speed, minSpeed, speedAxisMax, histMaxSpd, meanSpeed, totalDist, dark, unit,
 }: {
-  speed: number[]; minSpeed: number; speedAxisMax: number | null; histMaxSpd: number | null; dark: boolean;
-  unit: string;
+  speed: number[]; minSpeed: number; speedAxisMax: number | null; histMaxSpd: number | null;
+  meanSpeed: number; totalDist: number; dark: boolean; unit: string;
 }) {
   const valid = speed.filter((s) => Number.isFinite(s));
   const localHi = valid.length ? Math.max(...valid) * 1.001 : 1;
@@ -611,6 +617,9 @@ function SpeedHistogramPanel({
   }
   const centers = Array.from({ length: SPEED_HIST_BINS }, (_, i) => (i + 0.5) * binWidth);
   const colors = centers.map((c) => (c >= minSpeed ? (dark ? "#ccc" : "#444") : (dark ? "#444" : "#ccc")));
+  const subtitle = Number.isFinite(meanSpeed)
+    ? `mean=${meanSpeed.toFixed(1)}${unit}/s | total=${totalDist.toFixed(0)}${unit}`
+    : "";
 
   return (
     <Plot
@@ -622,7 +631,7 @@ function SpeedHistogramPanel({
         width: binWidth,
       }]}
       layout={baseLayout(
-        "Speed Distribution",
+        `Speed Distribution${subtitle ? `<br><span style="font-size:9px">${subtitle}</span>` : ""}`,
         {
           xaxis: { title: { text: `Speed (${unit}/s)` }, gridcolor: dark ? gridColorDark : gridColor, range: [0, hi] },
           yaxis: {
