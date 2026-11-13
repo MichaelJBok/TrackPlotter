@@ -37,6 +37,9 @@ export default function App() {
   // not the viewer, so each experiment can override them; everything else in
   // `settings` stays global. Persisted by filename (unlike the loaded data
   // itself), so re-loading the same folder reattaches these automatically.
+  // Pol angle is per-experiment too, but - unlike the others - it's never
+  // included when "Apply to all" broadcasts one experiment's core settings
+  // to the rest (see handleApplyToAll).
   const [coreOverrides, setCoreOverrides] = useState<Record<string, CoreSettings>>(loadCoreOverrides);
 
   useEffect(() => {
@@ -94,10 +97,19 @@ export default function App() {
     setSettings((s) => ({ ...s, ...patch }));
   }
 
+  // Broadcasts Color/FPS/ROI diameter/Min speed/Max ROI% to every loaded
+  // experiment - Pol angle is deliberately left out (see coreOverrides'
+  // declaration above) and each experiment keeps whatever Pol angle it had.
   function handleApplyToAll() {
-    const { fps, roiDiameterReal, minSpeed, roiFilterPct, colorMode, polAngle } = effectiveSettings;
-    const core: CoreSettings = { fps, roiDiameterReal, minSpeed, roiFilterPct, colorMode, polAngle };
-    setCoreOverrides(Object.fromEntries(uploadedNames.map((name) => [name, core])));
+    const { fps, roiDiameterReal, minSpeed, roiFilterPct, colorMode } = effectiveSettings;
+    setCoreOverrides((prev) =>
+      Object.fromEntries(
+        uploadedNames.map((name) => [
+          name,
+          { fps, roiDiameterReal, minSpeed, roiFilterPct, colorMode, polAngle: prev[name]?.polAngle ?? settings.polAngle },
+        ]),
+      ),
+    );
   }
 
   function handleFileChange(name: string) {
@@ -316,6 +328,7 @@ export default function App() {
           onApplyToAll={handleApplyToAll}
           canApplyToAll={uploadedNames.length > 1}
           roiPixelDiam={roiPixelDiam}
+          dark={dark}
         />
 
         <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -452,8 +465,20 @@ function DecimalField({
   );
 }
 
+/** Border/background wrapped around exactly the fields "Apply to all
+ * experiments" broadcasts, so it's visually obvious what that button does
+ * and doesn't touch (Pol angle, just below, is the deliberate exception). */
+const applyToAllGroup: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 8,
+  border: "1px solid #a9c4e8",
+  borderRadius: 6,
+  padding: 8,
+};
+
 function SettingsBar({
-  settings, onChangeGlobal, onChangeCore, onApplyToAll, canApplyToAll, roiPixelDiam,
+  settings, onChangeGlobal, onChangeCore, onApplyToAll, canApplyToAll, roiPixelDiam, dark,
 }: {
   settings: Settings;
   onChangeGlobal: (patch: Partial<Settings>) => void;
@@ -461,19 +486,90 @@ function SettingsBar({
   onApplyToAll: () => void;
   canApplyToAll: boolean;
   roiPixelDiam: number | null;
+  dark: boolean;
 }) {
   return (
     <section style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 12 }}>
       <SectionLabel>Settings</SectionLabel>
-      <label style={fieldRow}>
-        Color
-        <select
-          value={settings.colorMode}
-          onChange={(e) => onChangeCore({ colorMode: e.target.value as Settings["colorMode"] })}
+      <div
+        style={{
+          ...applyToAllGroup,
+          borderColor: dark ? "#3a5a8c" : "#a9c4e8",
+          background: dark ? "#192334" : "#f3f7fd",
+        }}
+      >
+        <label style={fieldRow}>
+          Color
+          <select
+            value={settings.colorMode}
+            onChange={(e) => onChangeCore({ colorMode: e.target.value as Settings["colorMode"] })}
+          >
+            <option value="time">time</option>
+            <option value="speed">speed</option>
+          </select>
+        </label>
+        <label style={fieldRow}>
+          FPS
+          <DecimalField
+            value={settings.fps}
+            fallback={1}
+            style={numberInput}
+            onChange={(fps) => onChangeCore({ fps })}
+          />
+        </label>
+        <label style={fieldRow}>
+          ROI diameter (cm)
+          <DecimalField
+            value={settings.roiDiameterReal}
+            fallback={0}
+            title="Real-world diameter of the ROI, in cm - 0 stays in px"
+            style={numberInput}
+            onChange={(roiDiameterReal) => onChangeCore({ roiDiameterReal })}
+          />
+        </label>
+        {roiPixelDiam != null && (
+          <div style={{ fontSize: 10, color: "#888", marginTop: -4 }}>
+            {settings.roiDiameterReal > 0
+              ? `ROI is ${roiPixelDiam.toFixed(0)} px across → 1 px = ${(settings.roiDiameterReal / roiPixelDiam).toFixed(4)} cm`
+              : `ROI is ${roiPixelDiam.toFixed(0)} px across - set a diameter above to calibrate`}
+          </div>
+        )}
+        <label style={fieldRow}>
+          Min speed
+          <DecimalField
+            value={settings.minSpeed}
+            fallback={0}
+            style={numberInput}
+            onChange={(minSpeed) => onChangeCore({ minSpeed })}
+          />
+        </label>
+        <label style={fieldRow}>
+          Max ROI%
+          <DecimalField
+            value={settings.roiFilterPct}
+            fallback={0}
+            style={numberInput}
+            onChange={(roiFilterPct) => onChangeCore({ roiFilterPct })}
+          />
+        </label>
+        <button
+          type="button"
+          disabled={!canApplyToAll}
+          title="Copy Color/FPS/ROI diameter/Min speed/Max ROI% (everything in this box) from this experiment to every other loaded experiment"
+          onClick={onApplyToAll}
         >
-          <option value="time">time</option>
-          <option value="speed">speed</option>
-        </select>
+          Apply to all experiments
+        </button>
+      </div>
+      <label style={fieldRow}>
+        Pol angle
+        <DecimalField
+          value={settings.polAngle}
+          fallback={0}
+          title="Per-experiment - not included in Apply to all"
+          style={numberInput}
+          onChange={(polAngle) => onChangeCore({ polAngle })}
+        />
       </label>
       <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <input
@@ -491,67 +587,6 @@ function SettingsBar({
         />
         Colorblind mode (Overview)
       </label>
-      <label style={fieldRow}>
-        FPS
-        <DecimalField
-          value={settings.fps}
-          fallback={1}
-          style={numberInput}
-          onChange={(fps) => onChangeCore({ fps })}
-        />
-      </label>
-      <label style={fieldRow}>
-        ROI diameter (cm)
-        <DecimalField
-          value={settings.roiDiameterReal}
-          fallback={0}
-          title="Real-world diameter of the ROI, in cm - 0 stays in px"
-          style={numberInput}
-          onChange={(roiDiameterReal) => onChangeCore({ roiDiameterReal })}
-        />
-      </label>
-      {roiPixelDiam != null && (
-        <div style={{ fontSize: 10, color: "#888", marginTop: -4 }}>
-          {settings.roiDiameterReal > 0
-            ? `ROI is ${roiPixelDiam.toFixed(0)} px across → 1 px = ${(settings.roiDiameterReal / roiPixelDiam).toFixed(4)} cm`
-            : `ROI is ${roiPixelDiam.toFixed(0)} px across - set a diameter above to calibrate`}
-        </div>
-      )}
-      <label style={fieldRow}>
-        Min speed
-        <DecimalField
-          value={settings.minSpeed}
-          fallback={0}
-          style={numberInput}
-          onChange={(minSpeed) => onChangeCore({ minSpeed })}
-        />
-      </label>
-      <label style={fieldRow}>
-        Max ROI%
-        <DecimalField
-          value={settings.roiFilterPct}
-          fallback={0}
-          style={numberInput}
-          onChange={(roiFilterPct) => onChangeCore({ roiFilterPct })}
-        />
-      </label>
-      <label style={fieldRow}>
-        Pol angle
-        <DecimalField
-          value={settings.polAngle}
-          fallback={0}
-          style={numberInput}
-          onChange={(polAngle) => onChangeCore({ polAngle })}
-        />
-      </label>
-      <button
-        type="button"
-        disabled={!canApplyToAll}
-        title="Copy Color/FPS/ROI diameter/Min speed/Max ROI%/Pol angle from this experiment to every other loaded experiment"
-        onClick={onApplyToAll}
-      >
-        Apply to all experiments
-      </button>
       <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <input
           type="checkbox"

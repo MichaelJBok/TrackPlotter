@@ -89,7 +89,6 @@ export default function SingleTrackView({ data, label, settings, registerCsvExpo
   const aboveMask = speedRaw.map((s) => s >= settings.minSpeed);
   const dirAbove = dirDeg.filter((_, i) => aboveMask[i]);
   const path = computePathStats(x, y, settings.pxScale, dirAbove);
-  const { meanDeg, R } = axialMeanR(dirAbove, settings.polAngle);
 
   // Same above-minSpeed filtering as computeTrackStats (Overview's stats
   // table) - for the Speed Distribution panel's subtitle.
@@ -181,7 +180,7 @@ export default function SingleTrackView({ data, label, settings, registerCsvExpo
         <SpeedVsDirectionPanel dirDeg={dirDeg} speed={speedRaw} minSpeed={settings.minSpeed} colorVals={colorVals} speedAxisMax={speedAxisMax} dark={dark} unit={unit} />
       </div>
       <div style={{ gridColumn: "3", gridRow: "2" }}>
-        <DirectionAxialPanel dirAbove={dirAbove} polAngle={settings.polAngle} meanDeg={meanDeg} R={R} histMaxDir={histMaxDir} dark={dark} />
+        <DirectionAxialPanel dirAbove={dirAbove} polAngle={settings.polAngle} histMaxDir={histMaxDir} dark={dark} />
       </div>
       <div style={{ gridColumn: "4", gridRow: "2" }}>
         <SpeedHistogramPanel speed={speedRaw} minSpeed={settings.minSpeed} speedAxisMax={speedAxisMax} histMaxSpd={histMaxSpd}
@@ -582,9 +581,9 @@ function SpeedVsDirectionPanel({
 }
 
 function DirectionAxialPanel({
-  dirAbove, polAngle, meanDeg, R, histMaxDir, dark,
+  dirAbove, polAngle, histMaxDir, dark,
 }: {
-  dirAbove: number[]; polAngle: number; meanDeg: number; R: number; histMaxDir: number | null; dark: boolean;
+  dirAbove: number[]; polAngle: number; histMaxDir: number | null; dark: boolean;
 }) {
   const edges = Array.from({ length: 19 }, (_, i) => i * 10);
   const centers = edges.slice(0, -1).map((e) => e + 5);
@@ -600,10 +599,22 @@ function DirectionAxialPanel({
 
   // The raw bearing histogram is never shifted by Pol angle - when one is
   // set, a second, differently-shaded histogram overlays it instead,
-  // showing the same bearings relative to that angle.
+  // showing the same bearings relative to that angle. Each has its own
+  // circular mean/R (relative to 0 and to polAngle respectively), colored
+  // to match its own bars so it's clear which stat belongs to which
+  // histogram, and both update live as Pol angle changes.
   const countsRaw = binAxial(0);
   const countsRel = polAngle !== 0 ? binAxial(polAngle) : null;
-  const subtitle = Number.isFinite(meanDeg) ? `mean ${meanDeg.toFixed(1)}° | R=${R.toFixed(3)}` : "";
+  const rawColor = dark ? "#ccc" : "#444";
+  const relColor = dark ? "#999" : "#808080"; // darker than the overlay bars' own fill, for legible text
+  const { meanDeg: meanRaw, R: rRaw } = axialMeanR(dirAbove, 0);
+  const { meanDeg: meanRel, R: rRel } = axialMeanR(dirAbove, polAngle);
+  const subtitleRaw = Number.isFinite(meanRaw)
+    ? `<span style="color:${rawColor}">mean ${meanRaw.toFixed(1)}° | R=${rRaw.toFixed(3)}</span>`
+    : "";
+  const subtitleRel = countsRel && Number.isFinite(meanRel)
+    ? `<br><span style="font-size:9px;color:${relColor}">rel. to pol: mean ${meanRel.toFixed(1)}° | R=${rRel.toFixed(3)}</span>`
+    : "";
 
   return (
     <Plot
@@ -611,7 +622,7 @@ function DirectionAxialPanel({
         {
           x: centers, y: countsRaw, type: "bar" as const,
           name: "Bearing",
-          marker: { color: dark ? "#ccc" : "#444", line: { color: dark ? "#141414" : "white", width: 1 } },
+          marker: { color: rawColor, line: { color: dark ? "#141414" : "white", width: 1 } },
           width: 10,
         },
         ...(countsRel
@@ -627,7 +638,7 @@ function DirectionAxialPanel({
           : []),
       ]}
       layout={baseLayout(
-        `Direction (axial)${subtitle ? `<br><span style="font-size:9px">${subtitle}</span>` : ""}`,
+        `Direction (axial)${subtitleRaw ? `<br><span style="font-size:9px">${subtitleRaw}</span>${subtitleRel}` : ""}`,
         {
           barmode: "overlay",
           xaxis: {
@@ -641,6 +652,8 @@ function DirectionAxialPanel({
           },
           showlegend: countsRel != null,
           legend: { font: { size: 8 }, x: 1, y: 1.15, xanchor: "right" as const },
+          // Extra headroom for the 2nd subtitle line when Pol angle != 0.
+          margin: { l: 44, r: 20, t: countsRel ? 42 : 28, b: 36 },
         },
         dark,
       )}

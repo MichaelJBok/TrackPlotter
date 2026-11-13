@@ -56,8 +56,11 @@ export const DEFAULT_SETTINGS: Settings = {
 /** The subset of Settings that makes sense to tune per-experiment (frame
  * rate, physical scale, filtering/display, and the polarization reference
  * axis all depend on the video/setup, not the viewer) - overridable per
- * experiment in App.tsx, with an "Apply to all" button to broadcast one
- * experiment's values to every other loaded one. */
+ * experiment in App.tsx. Color/FPS/ROI diameter/Min speed/Max ROI% also have
+ * an "Apply to all" button that broadcasts one experiment's values to every
+ * other loaded one - polAngle is deliberately excluded from that broadcast,
+ * since the polarizer's orientation is set per-camera/setup and has no
+ * reason to match across experiments. */
 export type CoreSettings = Pick<
   Settings,
   "fps" | "roiDiameterReal" | "minSpeed" | "roiFilterPct" | "colorMode" | "polAngle"
