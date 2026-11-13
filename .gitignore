@@ -6,3 +6,7 @@
 *.m~
 slprj/
 *.autosave
+
+# Local experiment data (tracks CSVs + background images) - large, personal,
+# and loaded into the webapp at runtime via its folder picker, not bundled.
+/data/
