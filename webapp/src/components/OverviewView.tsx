@@ -70,7 +70,7 @@ export default function OverviewView({ data, settings, onJumpToTrack, bgImage, r
         <XYOverlayPanel data={data} settings={settings} bgImage={bgImage} dark={dark} cb={cb} onClick={handlePlotlyClick} />
       </div>
       <div style={{ gridColumn: "2", gridRow: "1" }}>
-        <DirectionPolarPanel stats={stats} dark={dark} cb={cb} onClick={handlePlotlyClick} />
+        <DirectionPolarPanel stats={stats} polAngle={settings.polAngle} dark={dark} cb={cb} onClick={handlePlotlyClick} />
       </div>
       <div style={{ gridColumn: "2", gridRow: "2", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
         <BarPanel title="Distance" stats={stats} valueOf={(s) => s.totalDist} unit={unit} dark={dark} cb={cb} onClick={handlePlotlyClick} />
@@ -155,17 +155,22 @@ function XYOverlayPanel({
 }
 
 function DirectionPolarPanel({
-  stats, dark, cb, onClick,
-}: { stats: TrackStats[]; dark: boolean; cb: boolean; onClick: (e: any) => void }) {
+  stats, polAngle, dark, cb, onClick,
+}: { stats: TrackStats[]; polAngle: number; dark: boolean; cb: boolean; onClick: (e: any) => void }) {
   const traces = stats
     .map((s, i) => {
       if (!Number.isFinite(s.meanAxialDirDeg) || !Number.isFinite(s.vectorR)) return null;
       const color = colorForIndex(i, cb);
+      // s.meanAxialDirDeg is relative to Pol angle (see axialMeanR) - undo
+      // that shift here so this plot stays fixed to the actual bearing and
+      // doesn't rotate every time Pol angle changes; vectorR (the vector's
+      // length) is unaffected by the shift either way.
+      const absDeg = ((s.meanAxialDirDeg + polAngle) % 180 + 180) % 180;
       // Axial: plot the direction and its 180-flip, joined through the
       // center, since a direction and its mirror are the same axis.
       return {
         r: [s.vectorR, 0, s.vectorR],
-        theta: [s.meanAxialDirDeg, s.meanAxialDirDeg, s.meanAxialDirDeg + 180],
+        theta: [absDeg, absDeg, absDeg + 180],
         type: "scatterpolar" as const,
         mode: "lines+markers" as const,
         name: s.label,
